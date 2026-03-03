@@ -12,6 +12,7 @@ interface TabsState {
   renameTab: (tabId: string, name: string) => void
   reorderTabs: (fromIndex: number, toIndex: number) => void
   updateTabConnection: (tabId: string, isConnected: boolean) => void
+  updateTabSessionId: (tabId: string, newSessionId: string) => void
 }
 
 /**
@@ -100,6 +101,12 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
   updateTabConnection: (tabId: string, isConnected: boolean) => {
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, isConnected } : t)),
+    }))
+  },
+
+  updateTabSessionId: (tabId: string, newSessionId: string) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, sessionId: newSessionId } : t)),
     }))
   },
 }))

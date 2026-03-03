@@ -1939,3 +1939,56 @@ body.light {
 .fade-in {
   animation: fadeIn 0.3s ease-out;
 }
+
+/* 浮动动画 - 用于粒子背景 */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.1;
+  }
+  50% {
+    transform: translateY(-20px);
+    opacity: 0.3;
+  }
+}
+
+.animate-float {
+  animation: float ease-in-out infinite;
+}
+
+/* 滑入动画 */
+@keyframes slide-in {
+  from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* 连接页入场动画 */
+@keyframes fadeSlideLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeSlideRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 发光脉冲动画 - 用于装饰圆环 */
+@keyframes glow-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.1); opacity: 0.6; }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse ease-in-out infinite;
+}

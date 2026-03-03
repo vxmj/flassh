@@ -85,9 +85,9 @@ function TabItem({
   return (
     <div
       className={`
-        group flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 md:py-2 min-w-[80px] md:min-w-[120px] max-w-[150px] md:max-w-[200px]
+        group flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 md:py-2
         cursor-pointer select-none transition-all duration-200 ease-out
-        relative rounded-lg md:rounded-xl
+        relative rounded-lg md:rounded-xl whitespace-nowrap
         ${isActive
           ? 'bg-primary/25 text-text scale-105'
           : 'bg-transparent text-text-secondary opacity-70 hover:opacity-100 hover:text-text hover:bg-surface/50'
@@ -122,13 +122,13 @@ function TabItem({
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           className="
-            flex-1 min-w-0 bg-transparent border-b border-primary
-            outline-none text-xs md:text-sm text-white
+            bg-transparent border-b border-primary
+            outline-none text-xs md:text-sm text-white min-w-[60px]
           "
-          style={{ boxShadow: '0 1px 0 var(--color-primary)' }}
+          style={{ boxShadow: '0 1px 0 var(--color-primary)', width: `${Math.max(60, editName.length * 8)}px` }}
         />
       ) : (
-        <span className={`flex-1 min-w-0 truncate ${isActive ? 'text-sm md:text-lg font-bold' : 'text-xs md:text-sm'}`}>{tab.name}</span>
+        <span className={`${isActive ? 'text-sm md:text-lg font-bold' : 'text-xs md:text-sm'}`}>{tab.name}</span>
       )}
 
       {/* 关闭按钮 */}

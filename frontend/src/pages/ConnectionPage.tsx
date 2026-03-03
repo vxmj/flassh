@@ -1,5 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useCallback, useMemo, memo } from 'react'
 import { ConnectionForm, SavedConnectionList, ThemeSelector } from '../components'
 import { useConnectionsStore, useThemeStore } from '../store'
 import type { ConnectionConfig, SavedConnection } from '../types'
@@ -9,10 +8,10 @@ interface ConnectionPageProps {
   onBack?: () => void
 }
 
-// 粒子动画组件
-function ParticleBackground() {
+// 粒子动画组件 - CSS 动画替代 framer-motion，减少 JS 开销
+const ParticleBackground = memo(() => {
   const particles = useMemo(() => 
-    Array.from({ length: 30 }, (_, i) => ({
+    Array.from({ length: 20 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,
@@ -24,71 +23,44 @@ function ParticleBackground() {
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {particles.map((particle) => (
-        <motion.div
-          key={particle.id}
-          className="absolute rounded-full bg-primary/30"
+      {particles.map((p) => (
+        <div
+          key={p.id}
+          className="absolute rounded-full bg-primary/30 animate-float"
           style={{
-            width: particle.size,
-            height: particle.size,
-            left: `${particle.x}%`,
-            top: `${particle.y}%`,
-          }}
-          animate={{
-            y: [0, -30, 0],
-            opacity: [0.2, 0.5, 0.2],
-            scale: [1, 1.2, 1],
-          }}
-          transition={{
-            duration: particle.duration,
-            delay: particle.delay,
-            repeat: Infinity,
-            ease: 'easeInOut',
+            width: p.size,
+            height: p.size,
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            animationDuration: `${p.duration}s`,
+            animationDelay: `${p.delay}s`,
           }}
         />
       ))}
     </div>
   )
-}
+})
 
-// 发光圆环装饰
-function GlowRings() {
-  return (
-    <>
-      <motion.div
-        className="absolute -top-32 -right-32 w-96 h-96 rounded-full"
-        style={{
-          background: 'radial-gradient(circle, rgba(0, 212, 255, 0.12) 0%, transparent 70%)',
-        }}
-        animate={{
-          scale: [1, 1.1, 1],
-          opacity: [0.4, 0.6, 0.4],
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      />
-      <motion.div
-        className="absolute -bottom-32 -left-32 w-80 h-80 rounded-full"
-        style={{
-          background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)',
-        }}
-        animate={{
-          scale: [1, 1.15, 1],
-          opacity: [0.3, 0.5, 0.3],
-        }}
-        transition={{
-          duration: 10,
-          delay: 2,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      />
-    </>
-  )
-}
+// 发光圆环装饰 - 纯 CSS 动画
+const GlowRings = memo(() => (
+  <>
+    <div
+      className="absolute -top-32 -right-32 w-96 h-96 rounded-full animate-glow-pulse"
+      style={{
+        background: 'radial-gradient(circle, rgba(0, 212, 255, 0.12) 0%, transparent 70%)',
+        animationDuration: '8s',
+      }}
+    />
+    <div
+      className="absolute -bottom-32 -left-32 w-80 h-80 rounded-full animate-glow-pulse"
+      style={{
+        background: 'radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)',
+        animationDuration: '10s',
+        animationDelay: '2s',
+      }}
+    />
+  </>
+))
 
 export function ConnectionPage({ onConnect, onBack }: ConnectionPageProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -187,11 +159,7 @@ export function ConnectionPage({ onConnect, onBack }: ConnectionPageProps) {
       <main className="flex-1 flex items-center justify-center p-4 md:p-4 p-2 relative z-10 overflow-auto">
         <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* 连接表单 */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.3 }}
-          >
+          <div className="animate-in" style={{ animation: 'fadeSlideLeft 0.3s ease-out both' }}>
             <ConnectionForm
               onConnect={handleConnect}
               isLoading={isLoading}
@@ -204,40 +172,33 @@ export function ConnectionPage({ onConnect, onBack }: ConnectionPageProps) {
               } : undefined}
             />
             
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="mt-3 p-3 rounded-lg text-error text-sm"
-                  style={{
-                    background: 'rgba(255, 71, 87, 0.1)',
-                    border: '1px solid rgba(255, 71, 87, 0.3)',
-                  }}
-                >
-                  {error}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
+            {error && (
+              <div
+                className="mt-3 p-3 rounded-lg text-error text-sm animate-slide-in"
+                style={{
+                  background: 'rgba(255, 71, 87, 0.1)',
+                  border: '1px solid rgba(255, 71, 87, 0.3)',
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
 
           {/* 已保存的连接列表 */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            className="rounded-xl p-4 backdrop-blur-md"
+          <div
+            className="rounded-xl p-4 backdrop-blur-md animate-in"
             style={{
               background: isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(17, 24, 39, 0.5)',
               border: `1px solid ${isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 212, 255, 0.15)'}`,
+              animation: 'fadeSlideRight 0.3s ease-out 0.1s both',
             }}
           >
             <SavedConnectionList
               onSelect={handleSelectSaved}
               onQuickConnect={handleQuickConnect}
             />
-          </motion.div>
+          </div>
         </div>
       </main>
     </div>

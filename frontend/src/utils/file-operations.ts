@@ -3,42 +3,23 @@
  */
 
 /**
- * 创建文件
+ * 创建文件或文件夹
  */
-export async function createFile(
-  sessionId: string,
-  path: string
-): Promise<void> {
+async function createEntry(sessionId: string, path: string, type: 'file' | 'directory'): Promise<void> {
   const response = await fetch(`/api/sessions/${sessionId}/files`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, type: 'file' }),
+    body: JSON.stringify({ path, type }),
   })
 
   if (!response.ok) {
     const error = await response.json()
-    throw new Error(error.message || '创建文件失败')
+    throw new Error(error.message || (type === 'file' ? '创建文件失败' : '创建文件夹失败'))
   }
 }
 
-/**
- * 创建文件夹
- */
-export async function createDirectory(
-  sessionId: string,
-  path: string
-): Promise<void> {
-  const response = await fetch(`/api/sessions/${sessionId}/files`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, type: 'directory' }),
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.message || '创建文件夹失败')
-  }
-}
+export const createFile = (sessionId: string, path: string) => createEntry(sessionId, path, 'file')
+export const createDirectory = (sessionId: string, path: string) => createEntry(sessionId, path, 'directory')
 
 /**
  * 重命名文件或文件夹
@@ -61,40 +42,22 @@ export async function renameFile(
 }
 
 /**
- * 删除文件
+ * 删除文件或文件夹
  */
-export async function deleteFile(
-  sessionId: string,
-  path: string
-): Promise<void> {
+async function deleteEntry(sessionId: string, path: string, type: 'file' | 'directory'): Promise<void> {
   const response = await fetch(
-    `/api/sessions/${sessionId}/files?path=${encodeURIComponent(path)}&type=file`,
+    `/api/sessions/${sessionId}/files?path=${encodeURIComponent(path)}&type=${type}`,
     { method: 'DELETE' }
   )
 
   if (!response.ok) {
     const error = await response.json()
-    throw new Error(error.message || '删除文件失败')
+    throw new Error(error.message || (type === 'file' ? '删除文件失败' : '删除文件夹失败'))
   }
 }
 
-/**
- * 删除文件夹
- */
-export async function deleteDirectory(
-  sessionId: string,
-  path: string
-): Promise<void> {
-  const response = await fetch(
-    `/api/sessions/${sessionId}/files?path=${encodeURIComponent(path)}&type=directory`,
-    { method: 'DELETE' }
-  )
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.message || '删除文件夹失败')
-  }
-}
+export const deleteFile = (sessionId: string, path: string) => deleteEntry(sessionId, path, 'file')
+export const deleteDirectory = (sessionId: string, path: string) => deleteEntry(sessionId, path, 'directory')
 
 /**
  * 复制路径到剪贴板

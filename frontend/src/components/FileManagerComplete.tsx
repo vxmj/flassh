@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, memo } from 'react'
 import { FileExplorer, addFavorite } from './FileExplorer'
 import { ContextMenu, generateContextMenuItems } from './ContextMenu'
 import { ConfirmDialog, InputDialog } from './Dialog'
@@ -15,12 +15,39 @@ export interface FileManagerCompleteProps {
   onOpenTerminalInDir?: (path: string) => void
 }
 
+// 缓存格式化函数
+const SIZE_UNITS = ['B', 'KB', 'MB', 'GB']
 const formatSize = (bytes: number) => {
   if (bytes === 0) return '0 B'
-  const k = 1024, s = ['B', 'KB', 'MB', 'GB'], i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${s[i]}`
+  const k = 1024, i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${SIZE_UNITS[i]}`
 }
 const formatSpeed = (bps: number) => bps < 1024 ? `${bps.toFixed(0)} B/s` : bps < 1048576 ? `${(bps / 1024).toFixed(1)} KB/s` : `${(bps / 1048576).toFixed(1)} MB/s`
+
+// 上传进度组件 - memo 优化
+const UploadProgress = memo(({ uploads }: { uploads: TransferProgress[] }) => {
+  if (uploads.length === 0) return null
+  return (
+    <div className="fixed bottom-4 right-4 z-50 w-80 bg-surface border border-border rounded-lg shadow-xl overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-surface/50"><span className="text-sm font-medium text-white">上传中 ({uploads.length})</span></div>
+      <div className="max-h-60 overflow-y-auto">
+        {uploads.map(u => (
+          <div key={u.fileName} className="px-3 py-2 border-b border-border/30 last:border-0">
+            <div className="flex items-center justify-between mb-1"><span className="text-sm text-white truncate flex-1 mr-2">{u.fileName}</span><span className="text-xs text-secondary">{u.percentage}%</span></div>
+            <div className="h-1.5 bg-background rounded-full overflow-hidden"><div className="h-full bg-primary transition-all duration-300" style={{ width: `${u.percentage}%` }} /></div>
+            <div className="flex items-center justify-between mt-1 text-xs text-secondary"><span>{formatSize(u.transferredBytes)} / {formatSize(u.totalBytes)}</span><span>{formatSpeed(u.speed)}</span></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+})
+
+// Toast 组件 - memo 优化
+const Toast = memo(({ toast }: { toast: { type: 'success' | 'error'; message: string } | null }) => {
+  if (!toast) return null
+  return <div className={`fixed bottom-4 left-4 z-50 px-4 py-2 rounded-lg shadow-lg animate-slide-in ${toast.type === 'success' ? 'bg-success' : 'bg-error'} text-white text-sm`}>{toast.message}</div>
+})
 
 export function FileManagerComplete({ sessionId, serverKey, onFileOpen, onFileEdit, onOpenTerminalInDir }: FileManagerCompleteProps) {
   const favoriteStoreKey = serverKey || sessionId // 优先使用 serverKey 作为收藏存储 key
@@ -224,22 +251,8 @@ export function FileManagerComplete({ sessionId, serverKey, onFileOpen, onFileEd
 
       {conflictDialog && <FileConflictDialog isOpen={true} fileName={conflictDialog.fileName} onOverwrite={conflictDialog.onOverwrite} onSkip={conflictDialog.onSkip} onCancel={() => { conflictDialog.onSkip(); setConflictDialog(null) }} />}
 
-      {uploads.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-50 w-80 bg-surface border border-border rounded-lg shadow-xl overflow-hidden">
-          <div className="px-3 py-2 border-b border-border bg-surface/50"><span className="text-sm font-medium text-white">上传中 ({uploads.length})</span></div>
-          <div className="max-h-60 overflow-y-auto">
-            {uploads.map(u => (
-              <div key={u.fileName} className="px-3 py-2 border-b border-border/30 last:border-0">
-                <div className="flex items-center justify-between mb-1"><span className="text-sm text-white truncate flex-1 mr-2">{u.fileName}</span><span className="text-xs text-secondary">{u.percentage}%</span></div>
-                <div className="h-1.5 bg-background rounded-full overflow-hidden"><div className="h-full bg-primary transition-all duration-300" style={{ width: `${u.percentage}%` }} /></div>
-                <div className="flex items-center justify-between mt-1 text-xs text-secondary"><span>{formatSize(u.transferredBytes)} / {formatSize(u.totalBytes)}</span><span>{formatSpeed(u.speed)}</span></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {toast && <div className={`fixed bottom-4 left-4 z-50 px-4 py-2 rounded-lg shadow-lg animate-slide-in ${toast.type === 'success' ? 'bg-success' : 'bg-error'} text-white text-sm`}>{toast.message}</div>}
+      <UploadProgress uploads={uploads} />
+      <Toast toast={toast} />
     </div>
   )
 }

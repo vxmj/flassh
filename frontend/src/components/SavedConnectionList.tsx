@@ -228,11 +228,12 @@ function QuickConnectDialog({
  * 已保存连接列表组件
  */
 export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectionListProps) {
-  const { savedConnections, deleteConnection, updateConnection, loadConnections, isLoading: isLoadingConnections } = useConnectionsStore()
+  const { savedConnections, deleteConnection, updateConnection, loadConnections, reorderConnections, isLoading: isLoadingConnections } = useConnectionsStore()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [quickConnectConnection, setQuickConnectConnection] = useState<SavedConnection | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
   useEffect(() => { loadConnections() }, [loadConnections])
 
@@ -247,6 +248,30 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
     if (!onQuickConnect) return
     setIsConnecting(true)
     try { await onQuickConnect(config); setQuickConnectConnection(null) } finally { setIsConnecting(false) }
+  }
+
+  // 拖拽处理
+  const handleDragStart = (e: React.DragEvent | any, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', index.toString())
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleDrop = (e: React.DragEvent, toIndex: number) => {
+    e.preventDefault()
+    if (draggedIndex !== null && draggedIndex !== toIndex) {
+      reorderConnections(draggedIndex, toIndex)
+    }
+    setDraggedIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null)
   }
 
   if (isLoadingConnections) {
@@ -270,17 +295,21 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
   }
 
   return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-medium text-secondary mb-3">已保存的连接</h3>
+    <div className="space-y-2" onDragEnd={handleDragEnd}>
+      <h3 className="text-sm font-medium text-secondary mb-3">已保存的连接（可拖动排序）</h3>
       <AnimatePresence>
-        {savedConnections.map((connection) => (
+        {savedConnections.map((connection, index) => (
           <motion.div
             key={connection.id}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             layout
-            className="p-3 bg-surface rounded-lg border border-border hover:border-primary transition-colors group"
+            className={`p-3 bg-surface rounded-lg border border-border hover:border-primary transition-colors group cursor-move ${draggedIndex === index ? 'opacity-50' : ''}`}
+            draggable={editingId !== connection.id && deleteConfirmId !== connection.id}
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, index)}
           >
             {deleteConfirmId === connection.id ? (
               <div className="flex items-center justify-between">

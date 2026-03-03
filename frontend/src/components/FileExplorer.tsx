@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, memo, useMemo } from 'react'
 import type { FileItem } from '../types'
 import { VirtualList } from './VirtualList'
 
@@ -70,17 +70,19 @@ export const formatFileSize = (bytes: number) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${s[i]}`
 }
 
+// 缓存日期格式化器
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' })
+
 const formatDateTime = (date: Date) => {
   if (isNaN(date.getTime())) return { date: '--', time: '' }
   try {
-    const d = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
-    const t = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(date)
-    return { date: d, time: t }
+    return { date: dateFormatter.format(date), time: timeFormatter.format(date) }
   } catch { return { date: '--', time: '' } }
 }
 
 const FileRow = memo(({ file, selected, onSelect, onDblClick, onCtx }: { file: FileItem; selected: boolean; onSelect: () => void; onDblClick: () => void; onCtx: (e: React.MouseEvent) => void }) => {
-  const dt = formatDateTime(new Date(file.modifiedTime))
+  const dt = useMemo(() => formatDateTime(new Date(file.modifiedTime)), [file.modifiedTime])
   return (
     <div 
       data-file-item
@@ -95,7 +97,7 @@ const FileRow = memo(({ file, selected, onSelect, onDblClick, onCtx }: { file: F
       <span className="text-xs text-secondary/70 text-right flex-shrink-0 px-2 truncate hidden md:block" style={{ width: COL_WIDTHS.time }}>{dt.date} {dt.time}</span>
     </div>
   )
-})
+}, (prev, next) => prev.file.path === next.file.path && prev.file.modifiedTime === next.file.modifiedTime && prev.selected === next.selected)
 
 const Breadcrumb = ({ path, onNav }: { path: string; onNav: (p: string) => void }) => {
   const parts = path.split('/').filter(Boolean)
@@ -146,12 +148,19 @@ export function FileExplorer({ sessionId, currentPath, onPathChange, onFileSelec
     setLoading(true); setError(null)
     try {
       const res = await fetch(`/api/sessions/${sessionId}/files?path=${encodeURIComponent(path)}`)
-      if (!res.ok) throw new Error((await res.json()).message || '加载目录失败')
-      setFiles((await res.json()).files.sort((a: FileItem, b: FileItem) => {
-        if (a.type === 'directory' && b.type !== 'directory') return -1
-        if (a.type !== 'directory' && b.type === 'directory') return 1
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.message || '加载目录失败')
+      }
+      const data = await res.json()
+      // 优化：使用更快的排序
+      const sortedFiles = data.files.sort((a: FileItem, b: FileItem) => {
+        const aIsDir = a.type === 'directory' ? 0 : 1
+        const bIsDir = b.type === 'directory' ? 0 : 1
+        if (aIsDir !== bIsDir) return aIsDir - bIsDir
         return a.name.localeCompare(b.name)
-      }))
+      })
+      setFiles(sortedFiles)
     } catch (e) { setError(e instanceof Error ? e.message : '加载目录失败') }
     finally { setLoading(false) }
   }, [sessionId])

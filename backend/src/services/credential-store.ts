@@ -355,6 +355,27 @@ class CredentialStore {
   }
 
   /**
+   * 重新排序连接
+   */
+  reorderConnections(ids: string[]): void {
+    const newConnections = new Map<string, SavedConnectionInfo>()
+    for (const id of ids) {
+      const connection = this.connections.get(id)
+      if (connection) {
+        newConnections.set(id, connection)
+      }
+    }
+    // 保留未在 ids 中的连接
+    for (const [id, connection] of this.connections) {
+      if (!newConnections.has(id)) {
+        newConnections.set(id, connection)
+      }
+    }
+    this.connections = newConnections
+    this.persistConnections()
+  }
+
+  /**
    * 持久化连接列表
    */
   private persistConnections(): void {

@@ -55,15 +55,14 @@ export function getLogLevelIcon(level: LogLevel): React.ReactNode {
 /**
  * 获取日志级别颜色类名
  */
+const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
+  info: 'text-primary',
+  warning: 'text-yellow-500',
+  error: 'text-error',
+}
+
 export function getLogLevelColorClass(level: LogLevel): string {
-  switch (level) {
-    case 'info':
-      return 'text-primary'
-    case 'warning':
-      return 'text-yellow-500'
-    case 'error':
-      return 'text-error'
-  }
+  return LOG_LEVEL_COLORS[level]
 }
 
 /**

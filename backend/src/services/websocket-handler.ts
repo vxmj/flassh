@@ -6,7 +6,14 @@ import { sshManager } from './ssh-manager.js'
 interface WebSocketClient extends WebSocket {
   sessionId?: string
   isAlive?: boolean
+  cachedShell?: NodeJS.ReadWriteStream  // 缓存 shell 引用，跳过 Map 查找
 }
+
+// 预构建的消息模板，避免重复字符串拼接
+const MSG_PONG = (sessionId: string) => `{"type":"pong","sessionId":"${sessionId}"}`
+const MSG_OUTPUT = (sessionId: string, data: string) => `{"type":"output","sessionId":"${sessionId}","data":${JSON.stringify(data)}}`
+const MSG_DISCONNECT = (sessionId: string) => `{"type":"disconnect","sessionId":"${sessionId}"}`
+const MSG_ERROR = (sessionId: string, error: string) => `{"type":"error","sessionId":"${sessionId}","error":"${error}"}`
 
 /**
  * WebSocket 处理器
@@ -35,7 +42,25 @@ export class WebSocketHandler {
 
       ws.on('message', async (data) => {
         try {
-          const message: ClientMessage = JSON.parse(data.toString())
+          // 避免不必要的 Buffer→String 转换
+          const raw = typeof data === 'string' ? data : data.toString()
+          const message: ClientMessage = JSON.parse(raw)
+          
+          // 内联 input 快速路径 — 跳过 handleMessage 的 switch 开销
+          if (message.type === 'input') {
+            const { sessionId, data: inputData } = message
+            if (!sessionId || !inputData) return
+            
+            // 最快路径：使用缓存的 shell 引用
+            if (ws.cachedShell && ws.sessionId === sessionId) {
+              ws.cachedShell.write(inputData)
+              return
+            }
+            
+            await this.handleInput(ws, message)
+            return
+          }
+          
           await this.handleMessage(ws, message)
         } catch {
           this.sendError(ws, 'Invalid message format')
@@ -43,6 +68,7 @@ export class WebSocketHandler {
       })
 
       ws.on('close', () => {
+        ws.cachedShell = undefined
         if (ws.sessionId) {
           if (this.sessionToWs.get(ws.sessionId) === ws) {
             this.sessionToWs.delete(ws.sessionId)
@@ -72,7 +98,12 @@ export class WebSocketHandler {
         await this.handleResize(ws, message)
         break
       case 'ping':
-        this.sendMessage(ws, { type: 'pong', sessionId: message.sessionId })
+        // ping 时更新会话活跃时间（每 25 秒一次，不影响性能）
+        sshManager.touchSession(message.sessionId)
+        // 直接发送预构建的 pong 消息
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(MSG_PONG(message.sessionId))
+        }
         break
     }
   }
@@ -82,7 +113,7 @@ export class WebSocketHandler {
     if (!sessionId || !data) return
 
     const session = sshManager.getSession(sessionId)
-    if (!session) {
+    if (!session || session.status !== 'connected') {
       this.sendError(ws, 'Session not found', sessionId)
       return
     }
@@ -93,8 +124,9 @@ export class WebSocketHandler {
       this.sessionToWs.set(sessionId, ws)
     }
 
-    // 如果 shell 已存在，直接发送输入（最快路径）
+    // 如果 shell 已存在，直接发送输入并缓存引用
     if (session.shell) {
+      ws.cachedShell = session.shell
       session.shell.write(data)
       return
     }
@@ -103,6 +135,7 @@ export class WebSocketHandler {
     try {
       const shell = await sshManager.createShell(sessionId)
       if (shell) {
+        ws.cachedShell = shell
         this.setupShellOutput(sessionId, shell)
         shell.write(data)
       }
@@ -116,13 +149,20 @@ export class WebSocketHandler {
     if (!sessionId || !cols || !rows) return
 
     const session = sshManager.getSession(sessionId)
-    if (!session) return
+    if (!session || session.status !== 'connected') {
+      this.sendError(ws, 'Session not found', sessionId)
+      return
+    }
+
+    // resize 不频繁，可以更新时间戳
+    sshManager.touchSession(sessionId)
 
     ws.sessionId = sessionId
     this.sessionToWs.set(sessionId, ws)
 
     if (session.shell) {
       sshManager.resizeTerminal(sessionId, cols, rows)
+      ws.cachedShell = session.shell
       return
     }
 
@@ -133,6 +173,7 @@ export class WebSocketHandler {
     try {
       const currentSession = sshManager.getSession(sessionId)
       if (currentSession?.shell) {
+        ws.cachedShell = currentSession.shell
         sshManager.resizeTerminal(sessionId, cols, rows)
         this.flushBuffer(sessionId, ws)
         return
@@ -140,6 +181,7 @@ export class WebSocketHandler {
 
       const shell = await sshManager.createShell(sessionId, cols, rows)
       if (shell) {
+        ws.cachedShell = shell
         this.setupShellOutput(sessionId, shell)
         setTimeout(() => this.flushBuffer(sessionId, ws), 50)
       }
@@ -154,23 +196,43 @@ export class WebSocketHandler {
     this.shellOutputSetup.add(sessionId)
     this.outputBuffer.set(sessionId, [])
 
-    shell.on('data', (data: Buffer) => {
-      const ws = this.sessionToWs.get(sessionId)
+    // 微批量输出：合并快速连续的数据块为一次 ws.send()
+    let pendingData = ''
+    let flushScheduled = false
+
+    const flushOutput = () => {
+      flushScheduled = false
+      if (!pendingData) return
       
+      const ws = this.sessionToWs.get(sessionId)
       if (ws && ws.readyState === WebSocket.OPEN) {
-        // 直接发送，不经过 JSON.stringify 的 sendMessage
-        ws.send(`{"type":"output","sessionId":"${sessionId}","data":${JSON.stringify(data.toString('utf-8'))}}`)
+        ws.send(MSG_OUTPUT(sessionId, pendingData))
       } else {
         const buffer = this.outputBuffer.get(sessionId) || []
-        buffer.push(data.toString('utf-8'))
+        buffer.push(pendingData)
         this.outputBuffer.set(sessionId, buffer)
+      }
+      pendingData = ''
+    }
+
+    shell.on('data', (data: Buffer) => {
+      pendingData += data.toString('utf-8')
+      
+      if (!flushScheduled) {
+        flushScheduled = true
+        // setImmediate 在当前 I/O 周期结束后立即执行
+        // 合并同一事件循环 tick 内的所有数据块
+        setImmediate(flushOutput)
       }
     })
 
     shell.on('close', () => {
+      // 先刷新剩余数据
+      if (pendingData) flushOutput()
+      
       const ws = this.sessionToWs.get(sessionId)
       if (ws && ws.readyState === WebSocket.OPEN) {
-        this.sendMessage(ws, { type: 'disconnect', sessionId })
+        ws.send(MSG_DISCONNECT(sessionId))
       }
       this.shellOutputSetup.delete(sessionId)
       this.outputBuffer.delete(sessionId)
@@ -195,7 +257,9 @@ export class WebSocketHandler {
   }
 
   private sendError(ws: WebSocket, error: string, sessionId = ''): void {
-    this.sendMessage(ws, { type: 'error', sessionId, error })
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(MSG_ERROR(sessionId, error))
+    }
   }
 
   private startPingInterval(): void {

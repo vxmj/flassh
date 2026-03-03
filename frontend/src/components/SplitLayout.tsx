@@ -58,26 +58,17 @@ export function SplitLayout({
     setIsDragging(true)
   }, [isMobile])
 
-  // 处理拖动
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  // 通用拖动处理
+  const handleDrag = useCallback((clientX: number) => {
     if (!isDragging || !containerRef.current) return
     
     const containerRect = containerRef.current.getBoundingClientRect()
-    const newRatio = (e.clientX - containerRect.left) / containerRect.width
-    const clampedRatio = Math.max(minRatio, Math.min(maxRatio, newRatio))
-    setRatio(clampedRatio)
+    const newRatio = (clientX - containerRect.left) / containerRect.width
+    setRatio(Math.max(minRatio, Math.min(maxRatio, newRatio)))
   }, [isDragging, minRatio, maxRatio, setRatio])
 
-  // 处理触摸移动
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!isDragging || !containerRef.current) return
-    
-    const touch = e.touches[0]
-    const containerRect = containerRef.current.getBoundingClientRect()
-    const newRatio = (touch.clientX - containerRect.left) / containerRect.width
-    const clampedRatio = Math.max(minRatio, Math.min(maxRatio, newRatio))
-    setRatio(clampedRatio)
-  }, [isDragging, minRatio, maxRatio, setRatio])
+  const handleMouseMove = useCallback((e: MouseEvent) => handleDrag(e.clientX), [handleDrag])
+  const handleTouchMove = useCallback((e: TouchEvent) => handleDrag(e.touches[0].clientX), [handleDrag])
 
   // 处理拖动结束
   const handleMouseUp = useCallback(() => {

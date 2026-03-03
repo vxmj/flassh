@@ -1,38 +1,32 @@
 import { useState, useCallback, useEffect, useMemo, useRef, memo } from 'react'
-import { motion } from 'framer-motion'
 import { TabBar, SplitLayout, FileManagerComplete, FileEditor, TerminalPanel, LogPanel, ThemeSelector, LargeFileWarningDialog, isLargeFile, SidePanel } from '../components'
 import { useTabsStore, useEditorStore, useThemeStore } from '../store'
 import { createLogEntry, addLog as addLogToList, clearLogs as clearLogsList } from '../utils/logs'
 import type { FileItem, LogEntry, SessionState } from '../types'
 
 // 当前版本号
-const CURRENT_VERSION = '1.1.8'
+const CURRENT_VERSION = '1.2.0'
 
-// 版本检测组件
+// 版本检测组件 - 优化：减少重渲染
 const VersionBadge = memo(() => {
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
   const [showTooltip, setShowTooltip] = useState(false)
   
   useEffect(() => {
-    // 从 GitHub API 获取最新版本
+    let mounted = true
     const checkVersion = async () => {
       try {
         const res = await fetch('https://api.github.com/repos/yangjarod117/flassh/releases/latest')
-        if (res.ok) {
+        if (res.ok && mounted) {
           const data = await res.json()
           const version = data.tag_name?.replace('v', '') || null
-          if (version && version !== CURRENT_VERSION) {
-            setLatestVersion(version)
-          }
+          if (version && version !== CURRENT_VERSION) setLatestVersion(version)
         }
-      } catch {
-        // 忽略错误
-      }
+      } catch { /* ignore */ }
     }
     checkVersion()
-    // 每小时检查一次
     const interval = setInterval(checkVersion, 3600000)
-    return () => clearInterval(interval)
+    return () => { mounted = false; clearInterval(interval) }
   }, [])
   
   const hasUpdate = latestVersion && latestVersion !== CURRENT_VERSION
@@ -46,12 +40,8 @@ const VersionBadge = memo(() => {
       {showTooltip && hasUpdate && (
         <div className="absolute top-full left-0 mt-2 px-3 py-2 bg-surface border border-border rounded-lg shadow-xl z-50 whitespace-nowrap">
           <div className="text-xs text-warning font-medium mb-1">🎉 发现新版本</div>
-          <div className="text-xs text-text-secondary">
-            当前: <span className="text-text">v{CURRENT_VERSION}</span>
-          </div>
-          <div className="text-xs text-text-secondary">
-            最新: <span className="text-success font-medium">v{latestVersion}</span>
-          </div>
+          <div className="text-xs text-text-secondary">当前: <span className="text-text">v{CURRENT_VERSION}</span></div>
+          <div className="text-xs text-text-secondary">最新: <span className="text-success font-medium">v{latestVersion}</span></div>
           <div className="text-xs text-text-muted mt-1">请更新 Docker 镜像</div>
         </div>
       )}
@@ -59,25 +49,23 @@ const VersionBadge = memo(() => {
   )
 })
 
-// 粒子动画
+// 粒子动画 - 优化：使用 CSS 动画替代 framer-motion，减少 JS 开销
 const ParticleBackground = memo(() => {
-  const particles = useMemo(() => Array.from({ length: 20 }, (_, i) => ({
+  const particles = useMemo(() => Array.from({ length: 15 }, (_, i) => ({
     id: i, x: Math.random() * 100, y: Math.random() * 100,
     size: Math.random() * 2 + 1, duration: Math.random() * 25 + 15, delay: Math.random() * 5,
   })), [])
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
       {particles.map(p => (
-        <motion.div key={p.id} className="absolute rounded-full bg-primary/20"
-          style={{ width: p.size, height: p.size, left: `${p.x}%`, top: `${p.y}%` }}
-          animate={{ y: [0, -20, 0], opacity: [0.1, 0.3, 0.1], scale: [1, 1.1, 1] }}
-          transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'easeInOut' }} />
+        <div key={p.id} className="absolute rounded-full bg-primary/20 animate-float"
+          style={{ width: p.size, height: p.size, left: `${p.x}%`, top: `${p.y}%`, animationDuration: `${p.duration}s`, animationDelay: `${p.delay}s` }} />
       ))}
     </div>
   )
 })
 
-// 发光装饰
+// 发光装饰 - 静态组件
 const GlowAccents = memo(() => (
   <>
     <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(0, 212, 255, 0.06) 0%, transparent 70%)' }} />
@@ -85,17 +73,29 @@ const GlowAccents = memo(() => (
   </>
 ))
 
-const MemoizedTerminalPanel = memo(TerminalPanel, (prev, next) => prev.sessionId === next.sessionId && prev.isActive === next.isActive)
+// 终端面板 memo 优化
+const MemoizedTerminalPanel = memo(TerminalPanel, (prev, next) => prev.sessionId === next.sessionId && prev.isActive === next.isActive && prev.onSessionReconnect === next.onSessionReconnect)
+
+// 文件管理器 memo 优化
+const MemoizedFileManager = memo(FileManagerComplete, (prev, next) => 
+  prev.sessionId === next.sessionId && prev.serverKey === next.serverKey
+)
+
+// 日志面板 memo 优化
+const MemoizedLogPanel = memo(LogPanel)
+
+// 主题选择器 memo 优化
+const MemoizedThemeSelector = memo(ThemeSelector)
 
 interface WorkspacePageProps {
   session: SessionState
   sessions: Map<string, SessionState>
   onDisconnect: () => void
   onAddConnection: () => void
-  onSessionReconnect?: (oldSessionId: string, newSessionId: string) => void
+  onSessionReconnect?: (oldSessionId: string) => Promise<string | null>
 }
 
-export function WorkspacePage({ session, sessions, onDisconnect, onAddConnection }: WorkspacePageProps) {
+export function WorkspacePage({ session, sessions, onDisconnect, onAddConnection, onSessionReconnect }: WorkspacePageProps) {
   const [showLogPanel, setShowLogPanel] = useState(false)
   const [logsMap, setLogsMap] = useState<Map<string, LogEntry[]>>(new Map())
   const [largeFileWarning, setLargeFileWarning] = useState<{ file: FileItem; sessionId: string } | null>(null)
@@ -106,28 +106,43 @@ export function WorkspacePage({ session, sessions, onDisconnect, onAddConnection
   const { openFile, closeFile, openFiles } = useEditorStore()
   const isLight = useThemeStore().getCurrentTheme().type === 'light'
 
-  const activeTab = tabs.find(t => t.id === activeTabId)
+  const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId])
   const currentSession = useMemo(() => activeTab ? sessions.get(activeTab.sessionId) || session : session, [activeTab, sessions, session])
   const activeSessionId = activeTab?.sessionId || currentSession.id
   const sessionEntries = useMemo(() => Array.from(sessions.entries()), [sessions])
 
+  // 优化：使用 useCallback 缓存 addLog
   const addLog = useCallback((sessionId: string, log: Omit<LogEntry, 'id' | 'timestamp'>) => {
-    setLogsMap(prev => new Map(prev).set(sessionId, addLogToList(prev.get(sessionId) || [], createLogEntry(log.level, log.category, log.message, log.details))))
+    setLogsMap(prev => {
+      const newMap = new Map(prev)
+      newMap.set(sessionId, addLogToList(prev.get(sessionId) || [], createLogEntry(log.level, log.category, log.message, log.details)))
+      return newMap
+    })
   }, [])
 
+  // 优化：只在 sessions 变化时初始化日志
   useEffect(() => {
-    sessions.forEach((s, id) => { if (!logsMap.has(id)) addLog(id, { level: 'info', category: 'connection', message: `已连接到 ${s.config.host}:${s.config.port}`, details: s.config }) })
-  }, [sessions, logsMap, addLog])
+    sessions.forEach((s, id) => { 
+      if (!logsMap.has(id)) {
+        addLog(id, { level: 'info', category: 'connection', message: `已连接到 ${s.config.host}:${s.config.port}`, details: s.config })
+      }
+    })
+  }, [sessions.size]) // 只依赖 size 变化
 
-  useEffect(() => { if (activeTabId) updateTabConnection(activeTabId, session.status === 'connected') }, [activeTabId, session.status, updateTabConnection])
+  useEffect(() => { 
+    if (activeTabId) updateTabConnection(activeTabId, session.status === 'connected') 
+  }, [activeTabId, session.status, updateTabConnection])
 
   const loadFile = useCallback(async (file: FileItem, sessionId: string) => {
     try {
       const res = await fetch(`/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(file.path)}`)
       if (!res.ok) throw new Error('加载文件失败')
-      setEditorState({ fileId: openFile(file.path, (await res.json()).content || ''), sessionId })
+      const data = await res.json()
+      setEditorState({ fileId: openFile(file.path, data.content || ''), sessionId })
       addLog(sessionId, { level: 'info', category: 'file', message: `打开文件: ${file.path}` })
-    } catch (e) { addLog(sessionId, { level: 'error', category: 'file', message: `打开文件失败: ${file.path}`, details: { error: e instanceof Error ? e.message : '未知错误' } }) }
+    } catch (e) { 
+      addLog(sessionId, { level: 'error', category: 'file', message: `打开文件失败: ${file.path}`, details: { error: e instanceof Error ? e.message : '未知错误' } }) 
+    }
   }, [openFile, addLog])
 
   const openFileHandler = useCallback((file: FileItem, sessionId: string) => {
@@ -145,8 +160,58 @@ export function WorkspacePage({ session, sessions, onDisconnect, onAddConnection
     addLog(sid, { level: 'info', category: 'file', message: `保存文件: ${path}` })
   }, [editorState, activeSessionId, addLog])
 
+  // 优化：缓存断开连接处理
+  const handleDisconnect = useCallback(() => {
+    addLog(activeSessionId, { level: 'info', category: 'connection', message: `断开连接: ${currentSession.config.host}` })
+    onDisconnect()
+  }, [activeSessionId, currentSession.config.host, addLog, onDisconnect])
+
+  // 优化：缓存日志清除处理
+  const handleClearLogs = useCallback(() => {
+    setLogsMap(prev => new Map(prev).set(activeSessionId, clearLogsList()))
+  }, [activeSessionId])
+
+  // 优化：缓存终端目录切换处理
+  const handleOpenTerminalInDir = useCallback((sessionId: string) => (path: string) => {
+    const ws = terminalWsMapRef.current.get(sessionId)
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(`{"type":"input","sessionId":"${sessionId}","data":"cd \\"${path}\\"\\n"}`)
+    }
+  }, [])
+
+  // 优化：缓存 WebSocket ready 处理
+  const handleWsReady = useCallback((sessionId: string) => (ws: WebSocket) => {
+    terminalWsMapRef.current.set(sessionId, ws)
+  }, [])
+
+  // 优化：缓存编辑器关闭处理
+  const handleCloseEditor = useCallback(() => {
+    if (editorState) {
+      closeFile(editorState.fileId)
+      setEditorState(null)
+    }
+  }, [editorState, closeFile])
+
+  // 优化：缓存大文件确认处理
+  const handleLargeFileConfirm = useCallback(() => {
+    if (largeFileWarning) {
+      loadFile(largeFileWarning.file, largeFileWarning.sessionId)
+      setLargeFileWarning(null)
+    }
+  }, [largeFileWarning, loadFile])
+
+  // 优化：缓存当前日志
+  const currentLogs = useMemo(() => logsMap.get(activeSessionId) || [], [logsMap, activeSessionId])
+
+  // 优化：背景样式缓存
+  const bgStyle = useMemo(() => ({
+    background: isLight 
+      ? 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f8fafc 100%)' 
+      : 'linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0d1321 100%)'
+  }), [isLight])
+
   return (
-    <div className="h-screen flex flex-col relative overflow-hidden" style={{ background: isLight ? 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f8fafc 100%)' : 'linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0d1321 100%)' }}>
+    <div className="h-screen flex flex-col relative overflow-hidden" style={bgStyle}>
       <ParticleBackground />
       <GlowAccents />
 
@@ -169,32 +234,32 @@ export function WorkspacePage({ session, sessions, onDisconnect, onAddConnection
           <button onClick={() => setShowLogPanel(!showLogPanel)} className={`hidden sm:flex p-1.5 md:p-2 rounded-lg md:rounded-xl backdrop-blur-sm transition-all border ${showLogPanel ? 'bg-primary/30 text-white border-primary/50' : 'bg-surface hover:bg-primary/20 text-text-secondary border-border'}`} title="日志面板">
             <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           </button>
-          <div className="hidden sm:block"><ThemeSelector /></div>
-          <button onClick={() => { addLog(activeSessionId, { level: 'info', category: 'connection', message: `断开连接: ${currentSession.config.host}` }); onDisconnect() }} className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl backdrop-blur-sm bg-error/15 text-error hover:bg-error/25 transition-all text-xs md:text-sm border border-error/30">断开</button>
+          <div className="hidden sm:block"><MemoizedThemeSelector /></div>
+          <button onClick={handleDisconnect} className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl backdrop-blur-sm bg-error/15 text-error hover:bg-error/25 transition-all text-xs md:text-sm border border-error/30">断开</button>
         </div>
       </header>
 
       <TabBar onAddConnection={onAddConnection} />
 
-      {/* 主内容区 - 使用 pb-2 确保底部不被遮挡 */}
+      {/* 主内容区 */}
       <main className="flex-1 overflow-hidden relative z-10 pb-2">
         <div className="h-full flex">
           <div className="flex-1">
             <SplitLayout
               left={<div className="w-full h-full relative">{sessionEntries.map(([sid, sess]) => (
                 <div key={`fm-${sid}`} className="absolute inset-0 bg-surface" style={{ display: sid === activeSessionId ? 'block' : 'none' }}>
-                  <FileManagerComplete sessionId={sid} serverKey={`${sess.config.host}:${sess.config.port}`} onFileEdit={f => openFileHandler(f, sid)} onFileOpen={f => openFileHandler(f, sid)}
-                    onOpenTerminalInDir={path => { const ws = terminalWsMapRef.current.get(sid); if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'input', sessionId: sid, data: `cd "${path}"\n` })) } }} />
+                  <MemoizedFileManager sessionId={sid} serverKey={`${sess.config.host}:${sess.config.port}`} onFileEdit={f => openFileHandler(f, sid)} onFileOpen={f => openFileHandler(f, sid)}
+                    onOpenTerminalInDir={handleOpenTerminalInDir(sid)} />
                 </div>
               ))}</div>}
               right={<div className="w-full h-full relative">{sessionEntries.map(([sid]) => (
                 <div key={`term-${sid}`} className="absolute inset-0" style={{ zIndex: sid === activeSessionId ? 10 : 1, pointerEvents: sid === activeSessionId ? 'auto' : 'none' }}>
-                  <MemoizedTerminalPanel sessionId={sid} isActive={sid === activeSessionId} onWsReady={ws => terminalWsMapRef.current.set(sid, ws)} />
+                  <MemoizedTerminalPanel sessionId={sid} isActive={sid === activeSessionId} onWsReady={handleWsReady(sid)} onSessionReconnect={onSessionReconnect} />
                 </div>
               ))}</div>}
             />
           </div>
-          {showLogPanel && <div className="w-80 m-2 ml-0 rounded-2xl overflow-hidden bg-surface border border-border"><LogPanel logs={logsMap.get(activeSessionId) || []} onClear={() => setLogsMap(prev => new Map(prev).set(activeSessionId, clearLogsList()))} /></div>}
+          {showLogPanel && <div className="w-80 m-2 ml-0 rounded-2xl overflow-hidden bg-surface border border-border"><MemoizedLogPanel logs={currentLogs} onClear={handleClearLogs} /></div>}
         </div>
       </main>
 
@@ -207,16 +272,16 @@ export function WorkspacePage({ session, sessions, onDisconnect, onAddConnection
                 <svg className="w-4 h-4 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                 <span className="text-xs md:text-sm font-medium text-text truncate">{editorState.fileId}</span>
               </div>
-              <button onClick={() => { closeFile(editorState.fileId); setEditorState(null) }} className="p-2 md:p-1.5 rounded-lg md:rounded-xl hover:bg-white/10 text-text-secondary hover:text-text transition-colors flex-shrink-0 ml-2" title="关闭">
+              <button onClick={handleCloseEditor} className="p-2 md:p-1.5 rounded-lg md:rounded-xl hover:bg-white/10 text-text-secondary hover:text-text transition-colors flex-shrink-0 ml-2" title="关闭">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="h-[calc(100%-44px)]"><FileEditor fileId={editorState.fileId} onSave={saveFile} onClose={() => { closeFile(editorState.fileId); setEditorState(null) }} /></div>
+            <div className="h-[calc(100%-44px)]"><FileEditor fileId={editorState.fileId} onSave={saveFile} onClose={handleCloseEditor} /></div>
           </div>
         </div>
       )}
 
-      {largeFileWarning && <LargeFileWarningDialog isOpen onClose={() => setLargeFileWarning(null)} onConfirm={() => { loadFile(largeFileWarning.file, largeFileWarning.sessionId); setLargeFileWarning(null) }} fileName={largeFileWarning.file.name} fileSize={largeFileWarning.file.size} />}
+      {largeFileWarning && <LargeFileWarningDialog isOpen onClose={() => setLargeFileWarning(null)} onConfirm={handleLargeFileConfirm} fileName={largeFileWarning.file.name} fileSize={largeFileWarning.file.size} />}
 
       {/* 侧边面板 */}
       {sessionEntries.map(([sid]) => sid === activeSessionId && <SidePanel key={`sp-${sid}`} sessionId={sid} />)}

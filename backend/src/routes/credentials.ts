@@ -93,6 +93,25 @@ router.delete('/connections/:id', (req: Request, res: Response) => {
   res.status(204).send()
 })
 
+/**
+ * 重新排序连接
+ * POST /api/credentials/connections/reorder
+ */
+router.post('/connections/reorder', (req: Request, res: Response) => {
+  const { ids } = req.body
+
+  if (!Array.isArray(ids)) {
+    const error: ApiError = {
+      code: 'INVALID_REQUEST',
+      message: '无效的排序数据',
+    }
+    return res.status(400).json(error)
+  }
+
+  credentialStore.reorderConnections(ids)
+  res.json({ success: true })
+})
+
 // ========== 凭据 API ==========
 
 /**

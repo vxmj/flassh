@@ -93,14 +93,20 @@ export class SSHManager {
   }
 
   /**
-   * 获取会话
+   * 获取会话（不更新时间戳，性能优化）
    */
   getSession(sessionId: string): SSHSession | undefined {
+    return this.sessions.get(sessionId)
+  }
+
+  /**
+   * 标记会话活跃（仅在需要时调用）
+   */
+  touchSession(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (session) {
       session.lastActivityAt = new Date()
     }
-    return session
   }
 
   /**

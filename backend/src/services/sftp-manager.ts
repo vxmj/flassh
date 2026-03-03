@@ -2,14 +2,30 @@ import type { FileEntry, Stats } from 'ssh2'
 import type { FileStats } from '../types/index.js'
 import { sshManager } from './ssh-manager.js'
 
+// 目录缓存，减少重复请求
+interface DirCache {
+  files: FileStats[]
+  timestamp: number
+}
+const dirCache = new Map<string, DirCache>()
+const CACHE_TTL = 5000 // 5秒缓存
+
 /**
  * SFTP 文件操作管理器
  */
 export class SFTPManager {
   /**
-   * 列出目录内容
+   * 列出目录内容（带缓存）
    */
   async listDirectory(sessionId: string, path: string): Promise<FileStats[]> {
+    const cacheKey = `${sessionId}:${path}`
+    const cached = dirCache.get(cacheKey)
+    
+    // 检查缓存是否有效
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.files
+    }
+
     const session = sshManager.getSession(sessionId)
     if (!session) throw new Error('Session not found')
 
@@ -39,9 +55,31 @@ export class SFTPManager {
           mtime: new Date(item.attrs.mtime * 1000),
         }))
 
+        // 更新缓存
+        dirCache.set(cacheKey, { files, timestamp: Date.now() })
+        
         resolve(files)
       })
     })
+  }
+
+  /**
+   * 清除目录缓存
+   */
+  invalidateCache(sessionId: string, path?: string): void {
+    if (path) {
+      dirCache.delete(`${sessionId}:${path}`)
+      // 也清除父目录缓存
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      dirCache.delete(`${sessionId}:${parentPath}`)
+    } else {
+      // 清除该会话的所有缓存
+      for (const key of dirCache.keys()) {
+        if (key.startsWith(`${sessionId}:`)) {
+          dirCache.delete(key)
+        }
+      }
+    }
   }
 
   /**
@@ -114,6 +152,7 @@ export class SFTPManager {
           reject(err)
           return
         }
+        this.invalidateCache(sessionId, path)
         resolve()
       })
     })
@@ -123,7 +162,8 @@ export class SFTPManager {
    * 创建文件
    */
   async createFile(sessionId: string, path: string): Promise<void> {
-    return this.writeFile(sessionId, path, '')
+    await this.writeFile(sessionId, path, '')
+    this.invalidateCache(sessionId, path)
   }
 
   /**
@@ -138,6 +178,7 @@ export class SFTPManager {
           reject(err)
           return
         }
+        this.invalidateCache(sessionId, path)
         resolve()
       })
     })
@@ -165,6 +206,7 @@ export class SFTPManager {
           reject(err)
           return
         }
+        this.invalidateCache(sessionId, path)
         resolve()
       })
     })
@@ -182,6 +224,8 @@ export class SFTPManager {
           reject(err)
           return
         }
+        this.invalidateCache(sessionId, oldPath)
+        this.invalidateCache(sessionId, newPath)
         resolve()
       })
     })

@@ -242,33 +242,61 @@ function AppContent() {
   }, [])
 
   // 处理会话重连（服务器重启后）
-  const handleSessionReconnect = useCallback((oldSessionId: string, newSessionId: string) => {
-    // 更新会话映射
-    setSessions(prev => {
-      const newMap = new Map(prev)
-      const oldSession = newMap.get(oldSessionId)
-      if (oldSession) {
-        newMap.delete(oldSessionId)
-        newMap.set(newSessionId, { ...oldSession, id: newSessionId, status: 'connected' })
-      }
-      return newMap
-    })
-    
-    // 更新连接配置映射
+  const handleSessionReconnect = useCallback(async (oldSessionId: string): Promise<string | null> => {
+    // 获取保存的连接配置
     const config = connectionConfigsRef.current.get(oldSessionId)
-    if (config) {
+    if (!config) {
+      console.log(`[Reconnect] No saved config for session ${oldSessionId}`)
+      return null
+    }
+
+    try {
+      // 用保存的凭据重新创建 SSH 连接
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || '重连失败')
+      }
+
+      const data = await response.json()
+      const newSessionId = data.sessionId
+
+      // 更新会话映射
+      setSessions(prev => {
+        const newMap = new Map(prev)
+        const oldSession = newMap.get(oldSessionId)
+        if (oldSession) {
+          newMap.delete(oldSessionId)
+          newMap.set(newSessionId, { ...oldSession, id: newSessionId, status: 'connected' })
+        }
+        return newMap
+      })
+
+      // 更新连接配置映射
       connectionConfigsRef.current.delete(oldSessionId)
       connectionConfigsRef.current.set(newSessionId, config)
+
+      // 更新标签页的 sessionId
+      const tab = tabs.find(t => t.sessionId === oldSessionId)
+      if (tab) {
+        const { updateTabSessionId } = useTabsStore.getState()
+        updateTabSessionId(tab.id, newSessionId)
+      }
+
+      // 清理旧的断开的 session（释放后端内存）
+      fetch(`/api/sessions/${oldSessionId}`, { method: 'DELETE' }).catch(() => {})
+
+      console.log(`[Reconnect] Session reconnected: ${oldSessionId} -> ${newSessionId}`)
+      return newSessionId
+    } catch (error) {
+      console.error(`[Reconnect] Failed to reconnect session ${oldSessionId}:`, error)
+      return null
     }
-    
-    // 更新标签页的 sessionId
-    const tab = tabs.find(t => t.sessionId === oldSessionId)
-    if (tab) {
-      // 这里需要更新 tab 的 sessionId，但 useTabsStore 可能没有这个方法
-      // 暂时通过重新创建来处理
-    }
-    
-    console.log(`Session reconnected: ${oldSessionId} -> ${newSessionId}`)
   }, [tabs])
 
   // 当所有标签页关闭时显示连接页面
@@ -291,24 +319,10 @@ function AppContent() {
       })
     }
 
-    // 监听页面关闭事件
-    const handleBeforeUnload = () => {
-      disconnectAllSessions()
-    }
-
-    // 监听页面可见性变化（用于移动端）
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        // 页面隐藏时不断开，只在真正关闭时断开
-      }
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('beforeunload', disconnectAllSessions)
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('beforeunload', disconnectAllSessions)
     }
   }, [sessions])
 

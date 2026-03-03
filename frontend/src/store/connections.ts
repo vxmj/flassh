@@ -13,6 +13,7 @@ interface ConnectionsState {
   updateConnectionName: (id: string, name: string) => void
   updateConnection: (id: string, updates: Partial<Omit<SavedConnection, 'id' | 'createdAt'>>) => void
   updateLastUsed: (id: string) => void
+  reorderConnections: (fromIndex: number, toIndex: number) => void
   getConnection: (id: string) => SavedConnection | undefined
   hasStoredCredentials: (id: string) => Promise<boolean>
   getStoredCredentials: (id: string) => Promise<ConnectionConfig | null>
@@ -179,6 +180,23 @@ export const useConnectionsStore = create<ConnectionsState>()((set, get) => ({
         c.id === id ? { ...c, lastUsedAt: now } : c
       ),
     }))
+  },
+  
+  reorderConnections: (fromIndex: number, toIndex: number) => {
+    set((state) => {
+      const connections = [...state.savedConnections]
+      const [moved] = connections.splice(fromIndex, 1)
+      connections.splice(toIndex, 0, moved)
+      
+      // 保存顺序到服务端
+      fetch('/api/credentials/connections/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: connections.map(c => c.id) }),
+      }).catch(err => console.error('Failed to save connection order:', err))
+      
+      return { savedConnections: connections }
+    })
   },
   
   getConnection: (id: string) => {
