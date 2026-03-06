@@ -2,6 +2,8 @@
 
 基于 Web 的 SSH 终端客户端，支持文件管理、系统监控和多会话。
 
+[![Telegram Group](https://img.shields.io/badge/Telegram-群组交流-blue?logo=telegram)](https://t.me/+cbOi66BOhcNhYzg1) 加入群组反馈 Bug、交流使用体验
+
 ## 截图预览
 
 ![登录页面](screenshot-login.jpg)
