@@ -78,8 +78,7 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
   currentSessionIdRef.current = sessionId
   const [copyHint, setCopyHint] = useState<string | null>(null)
   const [isMobile] = useState(() => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window))
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const touchMoved = useRef(false)
+  const [selectMode, setSelectMode] = useState(false)
   const { getCurrentTheme, terminalFontSize, getTerminalFontFamily } = useThemeStore()
   const theme = getCurrentTheme()
   const terminalFontFamily = getTerminalFontFamily()
@@ -123,7 +122,7 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     }
   }, [])
 
-  // 右键复制/粘贴功能
+  // 右键复制/粘贴功能（桌面端）
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -140,30 +139,25 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     }
   }, [doCopy, doPaste])
 
-  // 移动端长按复制/粘贴
-  const handleTouchStart = useCallback((_e: React.TouchEvent) => {
-    touchMoved.current = false
-    longPressTimer.current = setTimeout(async () => {
-      if (touchMoved.current) return
-      const terminal = xtermRef.current
-      if (!terminal) return
-      const selection = terminal.getSelection()
-      if (selection && selection.length > 0) {
-        await doCopy()
-      } else {
-        await doPaste()
-      }
-    }, 500)
-  }, [doCopy, doPaste])
+  // 移动端双击进入选择模式
+  const lastTapRef = useRef(0)
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!isMobile) return
+    const now = Date.now()
+    if (now - lastTapRef.current < 300) {
+      // 双击 — 进入选择模式
+      e.preventDefault()
+      setSelectMode(true)
+      xtermRef.current?.select(0, xtermRef.current.buffer.active.cursorY, xtermRef.current.cols)
+    }
+    lastTapRef.current = now
+  }, [isMobile])
 
-  const handleTouchMove = useCallback(() => {
-    touchMoved.current = true
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
-  }, [])
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
-  }, [])
+  // 选择模式下复制后退出
+  const handleCopyAndExit = useCallback(async () => {
+    await doCopy()
+    setSelectMode(false)
+  }, [doCopy])
 
   // 监听 paste 事件来处理粘贴（统一处理所有粘贴，包括 Ctrl+V 和右键粘贴）
   useEffect(() => {
@@ -658,8 +652,6 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
       style={{ backgroundColor: theme.terminal.background }}
       onClick={focus}
       onContextMenu={handleContextMenu}
-      onTouchStart={isMobile ? handleTouchStart : undefined}
-      onTouchMove={isMobile ? handleTouchMove : undefined}
       onTouchEnd={isMobile ? handleTouchEnd : undefined}
     >
       {/* 终端容器 */}
@@ -671,7 +663,8 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
       {/* 移动端快捷工具栏 */}
       {isMobile && (
         <div className="flex items-center justify-end gap-1.5 px-2 py-1.5" style={{ backgroundColor: theme.terminal.background }}>
-          <button className={toolBtnCls} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); doCopy() }}>Copy</button>
+          {selectMode && <span className="text-xs text-primary mr-auto pl-1">Select mode — drag to select</span>}
+          <button className={`${toolBtnCls} ${selectMode ? 'bg-primary/30 text-primary border-primary/50' : ''}`} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); handleCopyAndExit() }}>Copy</button>
           <button className={toolBtnCls} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); doPaste() }}>Paste</button>
           <div className="w-px h-5 bg-border/30 flex-shrink-0" />
           <button className={toolBtnCls} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); sendKey('\t') }}>Tab</button>
