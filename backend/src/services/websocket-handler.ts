@@ -73,17 +73,19 @@ export class WebSocketHandler {
       ws.on('close', () => {
         ws.cachedShell = undefined
         if (ws.sessionId) {
-          // 清理 output buffer 防止内存泄漏
-          this.outputBuffer.delete(ws.sessionId)
+          // 只在当前 ws 仍是该 session 的活跃连接时才清理
           if (this.sessionToWs.get(ws.sessionId) === ws) {
             this.sessionToWs.delete(ws.sessionId)
+            const closedSessionId = ws.sessionId
+            // 延长等待时间到 30 秒，给前端足够时间重连
             setTimeout(() => {
-              if (!this.sessionToWs.has(ws.sessionId!)) {
-                sshManager.disconnect(ws.sessionId!)
-                this.shellOutputSetup.delete(ws.sessionId!)
-                this.shellCreating.delete(ws.sessionId!)
+              if (!this.sessionToWs.has(closedSessionId)) {
+                sshManager.disconnect(closedSessionId)
+                this.shellOutputSetup.delete(closedSessionId)
+                this.shellCreating.delete(closedSessionId)
+                this.outputBuffer.delete(closedSessionId)
               }
-            }, 5000)
+            }, 30000)
           }
         }
       })
@@ -123,8 +125,11 @@ export class WebSocketHandler {
       return
     }
 
-    // 只在首次设置 sessionId
-    if (!ws.sessionId) {
+    // 更新 sessionId 映射，如果 sessionId 变了清除旧缓存
+    if (ws.sessionId && ws.sessionId !== sessionId) {
+      ws.cachedShell = undefined
+    }
+    if (!ws.sessionId || ws.sessionId !== sessionId) {
       ws.sessionId = sessionId
       this.sessionToWs.set(sessionId, ws)
     }
@@ -162,12 +167,19 @@ export class WebSocketHandler {
     // resize 不频繁，可以更新时间戳
     sshManager.touchSession(sessionId)
 
+    // 如果 sessionId 变了（SSH 重连），清除旧的 cachedShell
+    if (ws.sessionId && ws.sessionId !== sessionId) {
+      ws.cachedShell = undefined
+    }
+
     ws.sessionId = sessionId
     this.sessionToWs.set(sessionId, ws)
 
     if (session.shell) {
       sshManager.resizeTerminal(sessionId, cols, rows)
       ws.cachedShell = session.shell
+      // WebSocket 重连后，flush 之前缓冲的输出
+      this.flushBuffer(sessionId, ws)
       return
     }
 
@@ -243,9 +255,9 @@ export class WebSocketHandler {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(MSG_DISCONNECT(sessionId))
       }
+      // 只清除 shell 输出监听标记，不清除 sessionToWs 和 outputBuffer
+      // sessionToWs 由 ws.close 事件管理，outputBuffer 可能还有数据需要 flush
       this.shellOutputSetup.delete(sessionId)
-      this.outputBuffer.delete(sessionId)
-      this.sessionToWs.delete(sessionId)
     })
   }
 

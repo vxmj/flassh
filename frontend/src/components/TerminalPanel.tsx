@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { useThemeStore } from '../store'
 import type { TerminalTheme } from '../types'
 import '@xterm/xterm/css/xterm.css'
@@ -76,9 +77,52 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
   const currentSessionIdRef = useRef(sessionId)
   currentSessionIdRef.current = sessionId
   const [copyHint, setCopyHint] = useState<string | null>(null)
+  const [isMobile] = useState(() => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window))
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchMoved = useRef(false)
   const { getCurrentTheme, terminalFontSize, getTerminalFontFamily } = useThemeStore()
   const theme = getCurrentTheme()
   const terminalFontFamily = getTerminalFontFamily()
+
+  // 复制操作（复用）
+  const doCopy = useCallback(async () => {
+    const terminal = xtermRef.current
+    if (!terminal) return
+    const selection = terminal.getSelection()
+    if (selection && selection.length > 0) {
+      try {
+        await navigator.clipboard.writeText(selection)
+        terminal.clearSelection()
+        setCopyHint('已复制')
+      } catch {
+        setCopyHint('复制失败')
+      }
+      setTimeout(() => setCopyHint(null), 800)
+    }
+  }, [])
+
+  // 粘贴操作（复用）
+  const doPaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      const termData = globalTerminals.get(currentSessionIdRef.current)
+      if (text && termData?.ws?.readyState === WebSocket.OPEN && termData.inputMsgPrefix) {
+        const normalizedText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r')
+        termData.ws.send(buildInputMsg(termData.inputMsgPrefix, normalizedText))
+        setCopyHint('已粘贴')
+        setTimeout(() => setCopyHint(null), 800)
+      }
+    } catch {}
+  }, [])
+
+  // 发送特殊按键
+  const sendKey = useCallback((data: string) => {
+    const termData = globalTerminals.get(currentSessionIdRef.current)
+    if (termData?.ws?.readyState === WebSocket.OPEN && termData.inputMsgPrefix) {
+      termData.ws.send(buildInputMsg(termData.inputMsgPrefix, data))
+    }
+    xtermRef.current?.focus()
+  }, [])
 
   // 右键复制/粘贴功能
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
@@ -91,26 +135,37 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     const selection = terminal.getSelection()
 
     if (selection && selection.length > 0) {
-      try {
-        await navigator.clipboard.writeText(selection)
-        terminal.clearSelection()
-        setCopyHint('已复制')
-        setTimeout(() => setCopyHint(null), 800)
-      } catch {
-        setCopyHint('复制失败')
-        setTimeout(() => setCopyHint(null), 800)
-      }
+      await doCopy()
     } else {
-      try {
-        const text = await navigator.clipboard.readText()
-        const termData = globalTerminals.get(currentSessionIdRef.current)
-        if (text && termData?.ws?.readyState === WebSocket.OPEN && termData.inputMsgPrefix) {
-          const normalizedText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r')
-          termData.ws.send(buildInputMsg(termData.inputMsgPrefix, normalizedText))
-        }
-      } catch {}
+      await doPaste()
     }
-  }, [sessionId])
+  }, [doCopy, doPaste])
+
+  // 移动端长按复制/粘贴
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchMoved.current = false
+    longPressTimer.current = setTimeout(async () => {
+      if (touchMoved.current) return
+      e.preventDefault()
+      const terminal = xtermRef.current
+      if (!terminal) return
+      const selection = terminal.getSelection()
+      if (selection && selection.length > 0) {
+        await doCopy()
+      } else {
+        await doPaste()
+      }
+    }, 500)
+  }, [doCopy, doPaste])
+
+  const handleTouchMove = useCallback(() => {
+    touchMoved.current = true
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+  }, [])
 
   // 监听 paste 事件来处理粘贴（统一处理所有粘贴，包括 Ctrl+V 和右键粘贴）
   useEffect(() => {
@@ -199,14 +254,25 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
       terminal.loadAddon(webLinksAddon)
     } catch { /* ignore */ }
     
+    // 加载 Unicode11 支持（修复二维码等宽字符显示）
+    try {
+      const unicode11Addon = new Unicode11Addon()
+      terminal.loadAddon(unicode11Addon)
+      terminal.unicode.activeVersion = '11'
+    } catch { /* ignore */ }
+    
     terminal.open(container)
     
-    // 延迟执行 fit
-    setTimeout(() => {
-      try {
-        fitAddon.fit()
-      } catch { /* ignore */ }
-    }, 100)
+    // 等待字体加载完成后再 fit，确保列数计算准确
+    const doFit = () => {
+      try { fitAddon.fit() } catch { /* ignore */ }
+    }
+    
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(() => setTimeout(doFit, 50))
+    } else {
+      setTimeout(doFit, 200)
+    }
 
     // 存储到全局，预构建输入消息前缀
     const inputMsgPrefix = `{"type":"input","sessionId":"${sessionId}","data":`
@@ -306,7 +372,6 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     let sshSessionLost = false
     let sshReconnecting = false
     let sshDisconnected = false // SSH 层面已断开（exit/disconnect）
-    let unmounted = false
     const maxReconnectAttempts = 5
     const baseReconnectDelay = 5000
 
@@ -479,9 +544,6 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
           pingInterval = null
         }
 
-        // 组件已卸载时不重连，重新挂载时会自动处理
-        if (unmounted) return
-
         // WebSocket 断开时尝试重连（除非 SSH 会话已明确丢失）
         if (!isReconnecting && !sshSessionLost && reconnectAttempts < maxReconnectAttempts) {
           scheduleReconnect(false)
@@ -494,10 +556,10 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     connect()
 
     return () => {
-      unmounted = true
       // 组件卸载时不关闭 WebSocket 和心跳
       // WebSocket 和终端实例都保留在 globalTerminals 中
-      // 只清理重连定时器（避免卸载后触发重连逻辑）
+      // 重连逻辑也保留，确保后台 WebSocket 断开时能自动恢复
+      // 只清理重连定时器中的待执行重连（避免并发重连）
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
     }
   }, [sessionId])
@@ -588,20 +650,46 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [isActive, sessionId])
 
+  // 移动端工具栏按钮样式
+  const toolBtnCls = "flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface/80 text-text-secondary active:bg-primary/30 active:text-primary transition-colors text-xs border border-border/50"
+
   return (
     <div
       ref={containerRef}
-      className="w-full h-full relative"
+      className="w-full h-full relative flex flex-col"
       style={{ backgroundColor: theme.terminal.background }}
       onClick={focus}
       onContextMenu={handleContextMenu}
+      onTouchStart={isMobile ? handleTouchStart : undefined}
+      onTouchMove={isMobile ? handleTouchMove : undefined}
+      onTouchEnd={isMobile ? handleTouchEnd : undefined}
     >
-      {/* 终端容器，使用 calc 预留底部空间 */}
+      {/* 终端容器 */}
       <div
         ref={terminalRef}
-        className="w-full"
-        style={{ height: 'calc(100% - 20px)', padding: '8px 6px 0 6px' }}
+        className="w-full flex-1 min-h-0"
+        style={{ padding: '8px 6px 0 6px' }}
       />
+      {/* 移动端快捷工具栏 */}
+      {isMobile && (
+        <div className="flex items-center gap-1.5 px-2 py-1.5 overflow-x-auto" style={{ backgroundColor: theme.terminal.background }}>
+          <button className={toolBtnCls} onClick={doCopy}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+            复制
+          </button>
+          <button className={toolBtnCls} onClick={doPaste}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+            粘贴
+          </button>
+          <div className="w-px h-5 bg-border/30 flex-shrink-0" />
+          <button className={toolBtnCls} onClick={() => sendKey('\t')}>Tab</button>
+          <button className={toolBtnCls} onClick={() => sendKey('\x03')}>Ctrl+C</button>
+          <button className={toolBtnCls} onClick={() => sendKey('\x04')}>Ctrl+D</button>
+          <button className={toolBtnCls} onClick={() => sendKey('\x1b[A')}>↑</button>
+          <button className={toolBtnCls} onClick={() => sendKey('\x1b[B')}>↓</button>
+          <button className={toolBtnCls} onClick={() => sendKey('\x1b')}>Esc</button>
+        </div>
+      )}
       {/* 复制/粘贴提示 */}
       {copyHint && (
         <div className="absolute top-2 right-2 px-3 py-1 bg-surface/90 text-white text-sm rounded shadow-lg z-10">
