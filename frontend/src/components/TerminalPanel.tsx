@@ -693,9 +693,9 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
           <textarea
             ref={selectTextareaRef}
             className="flex-1 w-full p-3 text-sm resize-none border-none outline-none"
-            style={{ backgroundColor: theme.terminal.background, color: theme.terminal.foreground, fontFamily: terminalFontFamily, fontSize: terminalFontSize }}
-            value={selectText}
-            readOnly
+            style={{ backgroundColor: theme.terminal.background, color: theme.terminal.foreground, fontFamily: terminalFontFamily, fontSize: terminalFontSize, userSelect: 'text', WebkitUserSelect: 'text' }}
+            defaultValue={selectText}
+            onBeforeInput={e => e.preventDefault()}
           />
           <div className="flex items-center justify-end gap-1.5 px-2 py-1.5" style={{ backgroundColor: theme.terminal.background }}>
             <span className="text-xs text-text-secondary mr-auto pl-1">长按选择文字</span>
