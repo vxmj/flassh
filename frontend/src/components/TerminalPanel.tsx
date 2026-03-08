@@ -79,8 +79,7 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
   const [copyHint, setCopyHint] = useState<string | null>(null)
   const [isMobile] = useState(() => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window))
   const [selectMode, setSelectMode] = useState(false)
-  const [selectText, setSelectText] = useState('')
-  const selectTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const selectTextareaRef = useRef<HTMLDivElement>(null)
   const { getCurrentTheme, terminalFontSize, getTerminalFontFamily } = useThemeStore()
   const theme = getCurrentTheme()
   const terminalFontFamily = getTerminalFontFamily()
@@ -157,20 +156,24 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
         const line = buf.getLine(buf.baseY + i)
         if (line) lines.push(line.translateToString(true))
       }
-      setSelectText(lines.join('\n'))
+      const text = lines.join('\n')
       setSelectMode(true)
-      // 延迟 focus textarea 让用户可以原生选择文字
-      setTimeout(() => selectTextareaRef.current?.focus(), 100)
+      // 延迟设置文本内容并 focus，让用户可以原生长按选择文字
+      setTimeout(() => {
+        if (selectTextareaRef.current) {
+          selectTextareaRef.current.textContent = text
+        }
+      }, 100)
     }
     lastTapRef.current = now
   }, [isMobile, selectMode])
 
   // 选择模式下复制选中文字后退出
   const handleCopyFromTextarea = useCallback(async () => {
-    const textarea = selectTextareaRef.current
-    if (!textarea) return
-    const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd)
-    const textToCopy = selected || textarea.value
+    const div = selectTextareaRef.current
+    if (!div) return
+    const selected = window.getSelection()?.toString() || ''
+    const textToCopy = selected || div.textContent || ''
     try {
       await navigator.clipboard.writeText(textToCopy)
       setCopyHint('已复制')
@@ -690,12 +693,13 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
       {/* 移动端选择模式 — 原生 textarea 弹层 */}
       {isMobile && selectMode && (
         <div className="absolute inset-0 z-20 flex flex-col" style={{ backgroundColor: theme.terminal.background }}>
-          <textarea
+          <div
             ref={selectTextareaRef}
-            className="flex-1 w-full p-3 text-sm resize-none border-none outline-none"
+            className="flex-1 w-full p-3 text-sm overflow-y-auto whitespace-pre-wrap break-all"
             style={{ backgroundColor: theme.terminal.background, color: theme.terminal.foreground, fontFamily: terminalFontFamily, fontSize: terminalFontSize, userSelect: 'text', WebkitUserSelect: 'text' }}
-            defaultValue={selectText}
-            onBeforeInput={e => e.preventDefault()}
+            contentEditable
+            suppressContentEditableWarning
+            onKeyDown={e => e.preventDefault()}
           />
           <div className="flex items-center justify-end gap-1.5 px-2 py-1.5" style={{ backgroundColor: theme.terminal.background }}>
             <span className="text-xs text-text-secondary mr-auto pl-1">长按选择文字</span>
