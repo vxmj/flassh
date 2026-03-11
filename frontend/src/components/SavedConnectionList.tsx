@@ -295,8 +295,9 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
   }
 
   return (
-    <div className="space-y-2" onDragEnd={handleDragEnd}>
-      <h3 className="text-sm font-medium text-secondary mb-3">已保存的连接（可拖动排序）</h3>
+    <div className="flex flex-col min-h-0 h-full" onDragEnd={handleDragEnd}>
+      <h3 className="text-sm font-medium text-secondary mb-1 shrink-0">已保存的连接（可拖动排序）</h3>
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
       <AnimatePresence>
         {savedConnections.map((connection, index) => (
           <motion.div
@@ -358,6 +359,7 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
           </motion.div>
         ))}
       </AnimatePresence>
+      </div>
 
       {/* 快速连接弹窗 */}
       <AnimatePresence>

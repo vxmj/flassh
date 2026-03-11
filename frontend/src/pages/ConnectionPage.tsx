@@ -156,8 +156,8 @@ export function ConnectionPage({ onConnect, onBack }: ConnectionPageProps) {
       </header>
 
       {/* 主内容区 */}
-      <main className="flex-1 flex items-center justify-center p-4 md:p-4 p-2 relative z-10 overflow-auto">
-        <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <main className="flex-1 flex lg:items-center items-start justify-center p-2 lg:p-4 relative z-10 overflow-auto">
+        <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
           {/* 连接表单 */}
           <div className="animate-in" style={{ animation: 'fadeSlideLeft 0.3s ease-out both' }}>
             <ConnectionForm
@@ -187,7 +187,7 @@ export function ConnectionPage({ onConnect, onBack }: ConnectionPageProps) {
 
           {/* 已保存的连接列表 */}
           <div
-            className="rounded-xl p-4 backdrop-blur-md animate-in"
+            className="rounded-xl p-3 lg:p-4 backdrop-blur-md animate-in flex flex-col overflow-hidden max-h-[50vh] lg:max-h-none lg:h-[640px]"
             style={{
               background: isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(17, 24, 39, 0.5)',
               border: `1px solid ${isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 212, 255, 0.15)'}`,

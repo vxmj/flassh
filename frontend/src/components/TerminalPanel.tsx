@@ -112,7 +112,39 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
         setCopyHint('已粘贴')
         setTimeout(() => setCopyHint(null), 800)
       }
-    } catch {}
+    } catch {
+      // clipboard API 被拒绝（iOS 关闭键盘后常见），用临时 input 触发系统粘贴
+      const input = document.createElement('input')
+      input.style.cssText = 'position:fixed;top:50%;left:50%;opacity:0;width:1px;height:1px;'
+      document.body.appendChild(input)
+      input.focus()
+      // 监听 paste 事件获取内容
+      const onPaste = (e: ClipboardEvent) => {
+        const text = e.clipboardData?.getData('text')
+        if (text) {
+          e.preventDefault()
+          const termData = globalTerminals.get(currentSessionIdRef.current)
+          if (termData?.ws?.readyState === WebSocket.OPEN && termData.inputMsgPrefix) {
+            const normalizedText = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r')
+            termData.ws.send(buildInputMsg(termData.inputMsgPrefix, normalizedText))
+            setCopyHint('已粘贴')
+            setTimeout(() => setCopyHint(null), 800)
+          }
+        }
+        input.removeEventListener('paste', onPaste)
+        document.body.removeChild(input)
+      }
+      input.addEventListener('paste', onPaste)
+      // 触发系统粘贴弹窗
+      document.execCommand('paste')
+      // 如果 execCommand 不生效，3 秒后清理
+      setTimeout(() => {
+        if (document.body.contains(input)) {
+          input.removeEventListener('paste', onPaste)
+          document.body.removeChild(input)
+        }
+      }, 3000)
+    }
   }, [])
 
   // 发送特殊按键（移动端不 focus 终端，避免弹出键盘）
@@ -680,7 +712,7 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
       ref={containerRef}
       className="w-full h-full relative flex flex-col"
       style={{ backgroundColor: theme.terminal.background }}
-      onClick={focus}
+      onClick={isMobile ? undefined : focus}
       onContextMenu={handleContextMenu}
       onTouchEnd={isMobile ? handleTouchEnd : undefined}
     >
@@ -711,7 +743,7 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
       {/* 移动端快捷工具栏 */}
       {isMobile && !selectMode && (
         <div className="flex items-center justify-end gap-1.5 px-2 py-1.5" style={{ backgroundColor: theme.terminal.background }}>
-          <button className={toolBtnCls} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); doPaste() }}>Paste</button>
+          <button className={toolBtnCls} onTouchStart={e => e.preventDefault()} onClick={() => doPaste()}>Paste</button>
           <div className="w-px h-5 bg-border/30 flex-shrink-0" />
           <button className={toolBtnCls} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); sendKey('\t') }}>Tab</button>
           <button className={toolBtnCls} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); sendKey('\x03') }}>Ctrl+C</button>

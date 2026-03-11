@@ -23,6 +23,7 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
   const [saveCredentials, setSaveCredentials] = useState(false)
   const [connectionName, setConnectionName] = useState('')
   const [error, setError] = useState('')
+  const [btnHover, setBtnHover] = useState(false)
   
   const currentThemeId = useThemeStore(s => s.currentThemeId)
   const followSystemTheme = useThemeStore(s => s.followSystemTheme)
@@ -75,7 +76,7 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
     }
   }
 
-  const inputClass = "w-full px-3 py-2 rounded-lg text-text placeholder:text-text-muted/60 transition-all outline-none border focus:ring-2 focus:ring-primary/20"
+  const inputClass = "w-full px-2.5 py-2 lg:py-1.5 rounded-lg text-sm text-text placeholder:text-text-muted/60 transition-all outline-none border focus:ring-2 focus:ring-primary/20"
   const inputStyle = {
     background: isLight ? 'rgba(255, 255, 255, 0.5)' : 'rgba(30, 41, 59, 0.5)',
     borderColor: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(100, 116, 139, 0.3)',
@@ -83,18 +84,19 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
 
   return (
     <form
-      className="w-full max-w-md mx-auto p-5 rounded-xl backdrop-blur-md"
+      className="w-full lg:h-[640px] p-4 pb-5 rounded-xl backdrop-blur-md flex flex-col"
       style={{
         background: isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(17, 24, 39, 0.5)',
         border: `1px solid ${isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 212, 255, 0.15)'}`,
       }}
       onSubmit={handleSubmit}
     >
-      <h2 className="text-lg font-semibold text-text text-center mb-4">SSH 连接</h2>
+      <h2 className="text-base font-semibold text-text text-center mb-2 shrink-0">SSH 连接</h2>
 
+      <div className="flex-1 min-h-0 pr-1">
       {/* 服务器地址 */}
-      <div className="mb-3">
-        <label className="block text-sm text-text-secondary mb-1">服务器地址</label>
+      <div className="mb-2">
+        <label className="block text-sm text-text-secondary mb-0.5">服务器地址</label>
         <input
           type="text"
           value={host}
@@ -107,9 +109,9 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
       </div>
 
       {/* 用户名和端口 */}
-      <div className="grid grid-cols-2 gap-3 mb-3">
+      <div className="grid grid-cols-2 gap-2 mb-2">
         <div>
-          <label className="block text-sm text-text-secondary mb-1">用户名</label>
+          <label className="block text-sm text-text-secondary mb-0.5">用户名</label>
           <input
             type="text"
             value={username}
@@ -121,7 +123,7 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
           />
         </div>
         <div>
-          <label className="block text-sm text-text-secondary mb-1">端口</label>
+          <label className="block text-sm text-text-secondary mb-0.5">端口</label>
           <input
             type="number"
             value={port}
@@ -135,15 +137,15 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
       </div>
 
       {/* 认证方式 */}
-      <div className="mb-3">
-        <label className="block text-sm text-text-secondary mb-2">认证方式</label>
+      <div className="mb-2">
+        <label className="block text-sm text-text-secondary mb-1">认证方式</label>
         <div className="flex gap-2">
           {(['password', 'key'] as const).map((type) => (
             <button
               key={type}
               type="button"
               onClick={() => setAuthType(type)}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
+              className={`flex-1 py-1.5 px-3 rounded-lg text-sm transition-all ${
                 authType === type
                   ? 'bg-primary/20 text-primary border border-primary/30'
                   : 'text-text-secondary border hover:bg-surface/30'
@@ -168,9 +170,9 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mb-3 overflow-hidden"
+            className="mb-2 overflow-hidden"
           >
-            <label className="block text-sm text-text-secondary mb-1">密码</label>
+            <label className="block text-sm text-text-secondary mb-0.5">密码</label>
             <input
               type="password"
               value={password}
@@ -187,11 +189,11 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mb-3 overflow-hidden space-y-2"
+            className="mb-2 overflow-hidden space-y-1.5"
           >
             <label className="block text-sm text-text-secondary">私钥</label>
             <label 
-              className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg cursor-pointer text-primary text-sm transition-colors"
+              className="flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg cursor-pointer text-primary text-sm transition-colors"
               style={{
                 background: isLight ? 'rgba(14, 165, 233, 0.1)' : 'rgba(0, 212, 255, 0.1)',
                 border: `1px dashed ${isLight ? 'rgba(14, 165, 233, 0.3)' : 'rgba(0, 212, 255, 0.3)'}`,
@@ -204,7 +206,7 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}
               placeholder="或粘贴私钥内容..."
-              rows={3}
+              rows={2}
               className={`${inputClass} font-mono text-xs resize-none`}
               style={inputStyle}
               disabled={isLoading}
@@ -231,7 +233,7 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
 
       {/* 保存连接选项 */}
       {!isEditMode && (
-        <div className="mb-4">
+        <div className="mb-2 mt-4">
           <label className="flex items-center gap-2 cursor-pointer text-sm text-text-secondary hover:text-text">
             <input
               type="checkbox"
@@ -269,14 +271,20 @@ export function ConnectionForm({ onConnect, isLoading = false, initialConfig, is
         </div>
       )}
 
+      </div>
+
       {/* 连接按钮 */}
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full py-2.5 rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+        className="w-full py-2.5 rounded-lg text-sm text-white font-medium flex items-center justify-center gap-2 transition-all disabled:opacity-60 shrink-0 mt-auto mb-2 active:scale-[0.98]"
+        onMouseEnter={() => setBtnHover(true)}
+        onMouseLeave={() => setBtnHover(false)}
         style={{
           background: 'linear-gradient(135deg, var(--color-primary) 0%, #0099cc 100%)',
-          boxShadow: isLoading ? 'none' : '0 4px 15px rgba(0, 212, 255, 0.3)',
+          boxShadow: isLoading ? 'none' : btnHover
+            ? '0 0 25px rgba(0, 212, 255, 0.5), 0 0 50px rgba(0, 212, 255, 0.25), 0 4px 20px rgba(0, 212, 255, 0.4)'
+            : '0 2px 8px rgba(0, 212, 255, 0.15)',
         }}
       >
         {isLoading ? (
