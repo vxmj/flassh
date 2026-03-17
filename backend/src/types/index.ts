@@ -39,8 +39,8 @@ export interface FileStats {
   mode: number
   uid: number
   gid: number
-  atime: Date
-  mtime: Date
+  atime: number
+  mtime: number
 }
 
 /**

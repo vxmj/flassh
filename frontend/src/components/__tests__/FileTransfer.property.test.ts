@@ -169,8 +169,8 @@ describe('Property 11: 文件冲突检测正确性', () => {
       'file' | 'directory' | 'symlink'
     >,
     size: fc.integer({ min: 0, max: 1000000 }),
-    modifiedTime: fc.date(),
-    permissions: fc.constant('rwxr-xr-x'),
+    mtime: fc.integer({ min: 0, max: 2000000000000 }),
+    
   })
 
   // 文件列表生成器
@@ -246,7 +246,7 @@ describe('Property 11: 文件冲突检测正确性', () => {
               path: `/test/${name}`,
               type,
               size: 100,
-              modifiedTime: new Date(),
+              mtime: Date.now(),
               permissions: 'rwxr-xr-x',
             },
           ]
@@ -275,7 +275,7 @@ describe('Property 11: 文件冲突检测正确性', () => {
             path: `/test/${name}`,
             type: 'file',
             size: 100,
-            modifiedTime: new Date(),
+            mtime: Date.now(),
             permissions: 'rwxr-xr-x',
           },
         ]

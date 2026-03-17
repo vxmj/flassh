@@ -35,17 +35,14 @@ describe('Property 3: 上下文菜单生成正确性', () => {
   // 文件大小生成器
   const fileSizeArb = fc.integer({ min: 0, max: 1000000000 })
 
-  // 权限字符串生成器
-  const permissionsArb = fc.constantFrom('rwxr-xr-x', 'rw-r--r--', 'rwx------', 'r--r--r--')
-
   // 文件项生成器（文件类型）
   const fileItemArb: fc.Arbitrary<FileItem> = fc.record({
     name: fileNameArb,
     path: filePathArb,
     type: fileTypeArb,
     size: fileSizeArb,
-    modifiedTime: fc.date(),
-    permissions: permissionsArb,
+    mtime: fc.integer({ min: 0, max: 2000000000000 }),
+    
   })
 
   // 文件项生成器（目录类型）
@@ -54,8 +51,8 @@ describe('Property 3: 上下文菜单生成正确性', () => {
     path: filePathArb,
     type: directoryTypeArb,
     size: fc.constant(0),
-    modifiedTime: fc.date(),
-    permissions: permissionsArb,
+    mtime: fc.integer({ min: 0, max: 2000000000000 }),
+    
   })
 
   // 创建模拟回调函数
@@ -126,10 +123,10 @@ describe('Property 3: 上下文菜单生成正确性', () => {
         expect(itemIds).toContain('delete')
         expect(itemIds).toContain('copyPath')
         expect(itemIds).toContain('upload')
+        expect(itemIds).toContain('download')
 
         // 验证不包含文件特有的菜单项
         expect(itemIds).not.toContain('edit')
-        expect(itemIds).not.toContain('download')
 
         return true
       }),
@@ -220,8 +217,8 @@ describe('Property 3: 上下文菜单生成正确性', () => {
       path: filePathArb,
       type: fc.constant('symlink') as fc.Arbitrary<'symlink'>,
       size: fileSizeArb,
-      modifiedTime: fc.date(),
-      permissions: permissionsArb,
+      mtime: fc.integer({ min: 0, max: 2000000000000 }),
+      
     })
 
     fc.assert(

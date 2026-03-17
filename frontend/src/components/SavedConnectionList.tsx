@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useConnectionsStore } from '../store'
+import { Dialog } from './Dialog'
 import type { SavedConnection, ConnectionConfig } from '../types'
 
 interface SavedConnectionListProps {
@@ -234,6 +235,131 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
   const [quickConnectConnection, setQuickConnectConnection] = useState<SavedConnection | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  // 导入导出
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [exportPassword, setExportPassword] = useState('')
+  const [importPassword, setImportPassword] = useState('')
+  const [importFile, setImportFile] = useState<any>(null)
+  const [importFileName, setImportFileName] = useState('')
+  const [importError, setImportError] = useState('')
+  const [exportError, setExportError] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [duplicates, setDuplicates] = useState<Array<{ imported: SavedConnection; existingId: string; existingName: string }>>([])
+  const [importData, setImportData] = useState<any[]>([])
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
+  const [duplicateChoices, setDuplicateChoices] = useState<Record<string, 'skip' | 'override'>>({})
+  const importFileRef = useRef<HTMLInputElement>(null)
+
+  // 导出连接
+  const handleExport = useCallback(async () => {
+    if (!exportPassword.trim()) { setExportError('请输入加密密码'); return }
+    setIsExporting(true)
+    setExportError('')
+    try {
+      const res = await fetch('/api/credentials/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: exportPassword }),
+      })
+      if (!res.ok) throw new Error('导出失败')
+      const data = await res.json()
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `flassh-connections-${new Date().toISOString().slice(0, 10)}.flassh`
+      a.click()
+      URL.revokeObjectURL(url)
+      setShowExportDialog(false)
+      setExportPassword('')
+    } catch { setExportError('导出失败') }
+    finally { setIsExporting(false) }
+  }, [exportPassword])
+
+  // 选择导入文件
+  const handleImportFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string)
+        setImportFile(parsed)
+        setImportError('')
+      } catch { setImportError('文件格式无效') }
+    }
+    reader.readAsText(file)
+  }, [])
+
+  // 导入第一步：解密并检查重复
+  const handleImportDecrypt = useCallback(async () => {
+    if (!importFile) { setImportError('请选择文件'); return }
+    if (!importPassword.trim()) { setImportError('请输入解密密码'); return }
+    setIsImporting(true)
+    setImportError('')
+    try {
+      const res = await fetch('/api/credentials/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: importPassword, file: importFile }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setImportError(data.message || '导入失败'); return }
+
+      setImportData(data._importData)
+      if (data.duplicates.length > 0) {
+        setDuplicates(data.duplicates)
+        const choices: Record<string, 'skip' | 'override'> = {}
+        data.duplicates.forEach((d: any) => { choices[d.imported.id] = 'skip' })
+        setDuplicateChoices(choices)
+        setShowImportDialog(false)
+        setShowDuplicateDialog(true)
+      } else {
+        // 没有重复，直接导入
+        await confirmImport(data._importData, {})
+      }
+    } catch { setImportError('导入失败') }
+    finally { setIsImporting(false) }
+  }, [importFile, importPassword])
+
+  // 确认导入
+  const confirmImport = useCallback(async (allData: any[], choices: Record<string, 'skip' | 'override'>) => {
+    const overrideIds: string[] = []
+    const items: any[] = []
+
+    for (const item of allData) {
+      const dup = duplicates.find(d => d.imported.host === item.connection.host && d.imported.port === item.connection.port && d.imported.username === item.connection.username)
+      if (dup) {
+        const choice = choices[dup.imported.id]
+        if (choice === 'skip') continue
+        if (choice === 'override') overrideIds.push(dup.existingId)
+      }
+      items.push(item)
+    }
+
+    try {
+      const res = await fetch('/api/credentials/import/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items, overrideIds }),
+      })
+      if (res.ok) {
+        setShowDuplicateDialog(false)
+        setShowImportDialog(false)
+        setImportPassword('')
+        setImportFile(null)
+        setImportFileName('')
+        setDuplicates([])
+        setImportData([])
+        // 重新加载连接列表
+        useConnectionsStore.setState({ isLoaded: false })
+        loadConnections()
+      }
+    } catch { /* ignore */ }
+  }, [duplicates, loadConnections])
 
   useEffect(() => { loadConnections() }, [loadConnections])
 
@@ -289,14 +415,84 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
         <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
         </svg>
-        <p className="text-sm">暂无保存的连接</p>
+        <p className="text-sm mb-3">暂无保存的连接</p>
+        <button
+          onClick={() => { setShowImportDialog(true); setImportError(''); setImportFile(null); setImportFileName(''); setImportPassword('') }}
+          className="text-xs text-primary hover:text-primary-hover transition-colors"
+        >导入连接</button>
+
+        {/* 导入弹窗 */}
+        <Dialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} title="导入连接">
+          <div className="space-y-3">
+            <div>
+              <input ref={importFileRef} type="file" accept=".flassh" onChange={handleImportFileChange} className="hidden" />
+              <button
+                onClick={() => importFileRef.current?.click()}
+                className="w-full px-3 py-2 rounded-lg border border-dashed border-primary/40 text-primary text-sm hover:bg-primary/10 transition-colors"
+              >
+                {importFileName || '选择 .flassh 文件'}
+              </button>
+            </div>
+            <input
+              type="password"
+              value={importPassword}
+              onChange={e => { setImportPassword(e.target.value); setImportError('') }}
+              onKeyDown={e => e.key === 'Enter' && handleImportDecrypt()}
+              placeholder="输入解密密码"
+              className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-text text-sm outline-none focus:border-primary"
+            />
+            {importError && <p className="text-xs text-error">{importError}</p>}
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setShowImportDialog(false)} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text rounded-lg transition-colors">取消</button>
+            <button onClick={handleImportDecrypt} disabled={isImporting || !importFile} className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 transition-colors">
+              {isImporting ? '解密中...' : '导入'}
+            </button>
+          </div>
+        </Dialog>
+
+        {/* 重复连接处理弹窗 */}
+        <Dialog isOpen={showDuplicateDialog} onClose={() => setShowDuplicateDialog(false)} title="发现重复连接">
+          <div className="space-y-3 max-h-60 overflow-y-auto">
+            {duplicates.map(d => (
+              <div key={d.imported.id} className="p-2 rounded-lg bg-surface border border-border text-left">
+                <div className="text-sm text-text mb-1">{d.imported.name} <span className="text-text-secondary">({d.imported.username}@{d.imported.host})</span></div>
+                <div className="text-xs text-text-muted mb-2">已存在: {d.existingName}</div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDuplicateChoices(prev => ({ ...prev, [d.imported.id]: 'skip' }))}
+                    className={`flex-1 py-1 text-xs rounded ${duplicateChoices[d.imported.id] === 'skip' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-surface border border-border text-text-secondary'}`}
+                  >跳过</button>
+                  <button
+                    onClick={() => setDuplicateChoices(prev => ({ ...prev, [d.imported.id]: 'override' }))}
+                    className={`flex-1 py-1 text-xs rounded ${duplicateChoices[d.imported.id] === 'override' ? 'bg-warning/20 text-warning border border-warning/30' : 'bg-surface border border-border text-text-secondary'}`}
+                  >覆盖</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setShowDuplicateDialog(false)} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text rounded-lg transition-colors">取消</button>
+            <button onClick={() => confirmImport(importData, duplicateChoices)} className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors">确认导入</button>
+          </div>
+        </Dialog>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col min-h-0 h-full" onDragEnd={handleDragEnd}>
-      <h3 className="text-sm font-medium text-secondary mb-1 shrink-0">已保存的连接（可拖动排序）</h3>
+      <div className="flex items-center justify-between mb-1 shrink-0">
+        <h3 className="text-sm font-medium text-secondary">已保存的连接（可拖动排序）</h3>
+        <div className="flex gap-1">
+          <button onClick={() => { setShowImportDialog(true); setImportError(''); setImportFile(null); setImportFileName(''); setImportPassword('') }} className="p-1 text-text-secondary hover:text-primary rounded transition-colors" title="导入">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+          </button>
+          <button onClick={() => { setShowExportDialog(true); setExportError(''); setExportPassword('') }} className="p-1 text-text-secondary hover:text-primary rounded transition-colors" title="导出">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+          </button>
+        </div>
+      </div>
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
       <AnimatePresence>
         {savedConnections.map((connection, index) => (
@@ -367,6 +563,83 @@ export function SavedConnectionList({ onSelect, onQuickConnect }: SavedConnectio
           <QuickConnectDialog connection={quickConnectConnection} onConnect={handleQuickConnect} onCancel={() => setQuickConnectConnection(null)} isLoading={isConnecting} />
         )}
       </AnimatePresence>
+
+      {/* 导出弹窗 */}
+      <Dialog isOpen={showExportDialog} onClose={() => setShowExportDialog(false)} title="导出连接">
+        <p className="text-sm text-text-secondary mb-3">所有连接及凭据将使用密码加密导出</p>
+        <input
+          type="password"
+          value={exportPassword}
+          onChange={e => { setExportPassword(e.target.value); setExportError('') }}
+          onKeyDown={e => e.key === 'Enter' && handleExport()}
+          placeholder="设置加密密码"
+          className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-text text-sm outline-none focus:border-primary mb-2"
+          autoFocus
+        />
+        {exportError && <p className="text-xs text-error mb-2">{exportError}</p>}
+        <div className="flex justify-end gap-2 mt-3">
+          <button onClick={() => setShowExportDialog(false)} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text rounded-lg transition-colors">取消</button>
+          <button onClick={handleExport} disabled={isExporting} className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 transition-colors">
+            {isExporting ? '导出中...' : '导出'}
+          </button>
+        </div>
+      </Dialog>
+
+      {/* 导入弹窗 */}
+      <Dialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} title="导入连接">
+        <div className="space-y-3">
+          <div>
+            <input ref={importFileRef} type="file" accept=".flassh" onChange={handleImportFileChange} className="hidden" />
+            <button
+              onClick={() => importFileRef.current?.click()}
+              className="w-full px-3 py-2 rounded-lg border border-dashed border-primary/40 text-primary text-sm hover:bg-primary/10 transition-colors"
+            >
+              {importFileName || '选择 .flassh 文件'}
+            </button>
+          </div>
+          <input
+            type="password"
+            value={importPassword}
+            onChange={e => { setImportPassword(e.target.value); setImportError('') }}
+            onKeyDown={e => e.key === 'Enter' && handleImportDecrypt()}
+            placeholder="输入解密密码"
+            className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-text text-sm outline-none focus:border-primary"
+          />
+          {importError && <p className="text-xs text-error">{importError}</p>}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={() => setShowImportDialog(false)} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text rounded-lg transition-colors">取消</button>
+          <button onClick={handleImportDecrypt} disabled={isImporting || !importFile} className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 transition-colors">
+            {isImporting ? '解密中...' : '导入'}
+          </button>
+        </div>
+      </Dialog>
+
+      {/* 重复连接处理弹窗 */}
+      <Dialog isOpen={showDuplicateDialog} onClose={() => setShowDuplicateDialog(false)} title="发现重复连接">
+        <div className="space-y-3 max-h-60 overflow-y-auto">
+          {duplicates.map(d => (
+            <div key={d.imported.id} className="p-2 rounded-lg bg-surface border border-border">
+              <div className="text-sm text-text mb-1">{d.imported.name} <span className="text-text-secondary">({d.imported.username}@{d.imported.host})</span></div>
+              <div className="text-xs text-text-muted mb-2">已存在: {d.existingName}</div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDuplicateChoices(prev => ({ ...prev, [d.imported.id]: 'skip' }))}
+                  className={`flex-1 py-1 text-xs rounded ${duplicateChoices[d.imported.id] === 'skip' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-surface border border-border text-text-secondary'}`}
+                >跳过</button>
+                <button
+                  onClick={() => setDuplicateChoices(prev => ({ ...prev, [d.imported.id]: 'override' }))}
+                  className={`flex-1 py-1 text-xs rounded ${duplicateChoices[d.imported.id] === 'override' ? 'bg-warning/20 text-warning border border-warning/30' : 'bg-surface border border-border text-text-secondary'}`}
+                >覆盖</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={() => setShowDuplicateDialog(false)} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text rounded-lg transition-colors">取消</button>
+          <button onClick={() => confirmImport(importData, duplicateChoices)} className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors">确认导入</button>
+        </div>
+      </Dialog>
     </div>
   )
 }

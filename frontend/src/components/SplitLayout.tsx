@@ -115,7 +115,7 @@ export function SplitLayout({
         {/* 移动端遮罩 */}
         {showMobileSidebar && (
           <div 
-            className="fixed inset-0 bg-black/50 z-30 animate-fade-in"
+            className="fixed inset-0 bg-black/50 z-[60] animate-fade-in"
             onClick={() => setShowMobileSidebar(false)}
           />
         )}
@@ -123,13 +123,26 @@ export function SplitLayout({
         {/* 移动端侧边栏 */}
         <div
           className={`
-            fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw]
+            fixed inset-y-0 left-0 z-[70] w-72 max-w-[85vw]
             bg-surface border-r border-border
             transform transition-transform duration-slow ease-out
             ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full'}
           `}
+          style={{ overscrollBehavior: 'contain' }}
         >
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-auto pt-[env(safe-area-inset-top,0px)]" style={{ overscrollBehavior: 'contain' }}>
+            {/* 移动端侧边栏标题栏 */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0 bg-surface">
+              <span className="text-sm font-medium text-text">文件管理</span>
+              <button
+                onClick={() => setShowMobileSidebar(false)}
+                className="p-1.5 rounded-lg text-text-secondary hover:text-text hover:bg-surface-hover transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
             {left}
           </div>
         </div>
@@ -139,31 +152,27 @@ export function SplitLayout({
           {right}
         </div>
         
-        {/* 移动端切换按钮 */}
+        {/* 移动端切换按钮 — 贴左边缘的小标签，不遮挡终端 */}
         <button
           onClick={() => setShowMobileSidebar(!showMobileSidebar)}
           className="
-            fixed bottom-14 left-4 z-50
-            w-12 h-12 rounded-full
-            bg-primary text-white shadow-theme-lg
+            fixed top-1/2 -translate-y-1/2 left-0 z-[80]
+            w-5 h-14 rounded-r-lg
+            bg-primary/80 text-white shadow-lg
             flex items-center justify-center
             transition-all duration-normal
-            hover:bg-primary-hover hover:scale-105
             active:scale-95
           "
+          style={{ backdropFilter: 'blur(8px)' }}
           aria-label={showMobileSidebar ? '关闭侧边栏' : '打开侧边栏'}
         >
           <svg
-            className={`w-6 h-6 transition-transform duration-normal ${showMobileSidebar ? 'rotate-180' : ''}`}
+            className={`w-3.5 h-3.5 transition-transform duration-normal ${showMobileSidebar ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            {showMobileSidebar ? (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            )}
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
           </svg>
         </button>
       </div>

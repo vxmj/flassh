@@ -17,7 +17,20 @@ const globalTerminals = new Map<string, {
 }>()
 
 // 预构建消息函数 - 避免重复字符串拼接
-const buildInputMsg = (prefix: string, data: string) => `${prefix}${JSON.stringify(data)}}`
+// 对常见单字符（ASCII 可打印字符 + 回车）预构建完整消息，跳过 JSON.stringify
+const SINGLE_CHAR_CACHE = new Map<string, string>()
+function buildInputMsg(prefix: string, data: string): string {
+  if (data.length === 1) {
+    const key = prefix + data
+    let cached = SINGLE_CHAR_CACHE.get(key)
+    if (!cached) {
+      cached = `${prefix}${JSON.stringify(data)}}`
+      SINGLE_CHAR_CACHE.set(key, cached)
+    }
+    return cached
+  }
+  return `${prefix}${JSON.stringify(data)}}`
+}
 const buildResizeMsg = (sessionId: string, cols: number, rows: number) => `{"type":"resize","sessionId":"${sessionId}","cols":${cols},"rows":${rows}}`
 const buildPingMsg = (sessionId: string) => `{"type":"ping","sessionId":"${sessionId}"}`
 
@@ -64,7 +77,7 @@ function convertToXtermTheme(terminalTheme: TerminalTheme) {
 /**
  * 终端面板组件
  */
-export function TerminalPanel({ sessionId, isActive = true, onResize, onData, onWsReady, onSessionReconnect, onConnectionChange }: TerminalPanelProps) {
+export function TerminalPanel({ sessionId, isActive = true, onResize, onWsReady, onSessionReconnect, onConnectionChange }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
@@ -341,11 +354,9 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onData, on
     xtermRef.current = terminal
     fitAddonRef.current = fitAddon
 
-    // 处理终端输入 - 使用 ref 获取最新 sessionId
+    // 处理终端输入 — 热路径，尽量少做事
     terminal.onData((data) => {
-      if (onData) onData(data)
-      const sid = currentSessionIdRef.current
-      const termData = globalTerminals.get(sid)
+      const termData = globalTerminals.get(currentSessionIdRef.current)
       if (termData?.ws?.readyState === WebSocket.OPEN && termData.inputMsgPrefix) {
         termData.ws.send(buildInputMsg(termData.inputMsgPrefix, data))
       }

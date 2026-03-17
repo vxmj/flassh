@@ -1,6 +1,6 @@
 {
   "name": "flassh-backend",
-  "version": "1.2.5",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@types/compression": "^1.8.1",
+    "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.2.1",

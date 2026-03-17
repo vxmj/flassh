@@ -8,7 +8,7 @@ interface DirCache {
   timestamp: number
 }
 const dirCache = new Map<string, DirCache>()
-const CACHE_TTL = 5000 // 5秒缓存（读操作），写操作会主动失效
+const CACHE_TTL = 10000 // 10秒缓存（读操作），写操作会主动失效
 
 /**
  * SFTP 文件操作管理器
@@ -36,6 +36,9 @@ export class SFTPManager {
     const sftp = session.sftp
     if (!sftp) throw new Error('SFTP not initialized')
 
+    // 规范化路径前缀，避免每个文件都做 replace
+    const prefix = path === '/' ? '/' : path + '/'
+
     return new Promise((resolve, reject) => {
       sftp.readdir(path, (err, list) => {
         if (err) {
@@ -43,16 +46,16 @@ export class SFTPManager {
           return
         }
 
-    const files: FileStats[] = list.map((item: FileEntry) => ({
+        const files: FileStats[] = list.map((item: FileEntry) => ({
           name: item.filename,
-          path: `${path}/${item.filename}`.replace(/\/+/g, '/'),
+          path: prefix + item.filename,
           type: this.getFileType(item.attrs),
           size: item.attrs.size,
           mode: item.attrs.mode,
           uid: item.attrs.uid,
           gid: item.attrs.gid,
-          atime: new Date(item.attrs.atime * 1000),
-          mtime: new Date(item.attrs.mtime * 1000),
+          atime: item.attrs.atime * 1000,
+          mtime: item.attrs.mtime * 1000,
         }))
 
         // 更新缓存
@@ -255,8 +258,8 @@ export class SFTPManager {
           mode: stats.mode,
           uid: stats.uid,
           gid: stats.gid,
-          atime: new Date(stats.atime * 1000),
-          mtime: new Date(stats.mtime * 1000),
+          atime: stats.atime * 1000,
+          mtime: stats.mtime * 1000,
         })
       })
     })

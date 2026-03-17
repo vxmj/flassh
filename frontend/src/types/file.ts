@@ -11,8 +11,7 @@ export interface FileItem {
   path: string
   type: FileType
   size: number
-  modifiedTime: Date
-  permissions: string
+  mtime: number
 }
 
 /**

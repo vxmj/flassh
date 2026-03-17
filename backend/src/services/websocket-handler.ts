@@ -45,21 +45,48 @@ export class WebSocketHandler {
 
       ws.on('message', async (data) => {
         try {
-          // 避免不必要的 Buffer→String 转换
           const raw = typeof data === 'string' ? data : data.toString()
+          
+          // 超快路径：input 消息直接字符串提取，跳过 JSON.parse
+          // 格式: {"type":"input","sessionId":"xxx","data":"yyy"}
+          if (raw.length > 20 && raw.charCodeAt(9) === 105 /* 'i' in "input" */) {
+            // 提取 sessionId
+            const sidStart = raw.indexOf('"sessionId":"')
+            if (sidStart !== -1) {
+              const sidValStart = sidStart + 13
+              const sidEnd = raw.indexOf('"', sidValStart)
+              const sessionId = raw.substring(sidValStart, sidEnd)
+              
+              // 提取 data（JSON 编码的字符串）
+              const dataMarker = ',"data":'
+              const dataIdx = raw.indexOf(dataMarker)
+              if (dataIdx !== -1) {
+                const dataJson = raw.substring(dataIdx + dataMarker.length, raw.length - 1)
+                const inputData = JSON.parse(dataJson) as string
+                
+                if (sessionId && inputData) {
+                  // 最快路径：使用缓存的 shell 引用
+                  if (ws.cachedShell && ws.sessionId === sessionId) {
+                    ws.cachedShell.write(inputData)
+                    return
+                  }
+                  
+                  await this.handleInput(ws, { type: 'input', sessionId, data: inputData })
+                  return
+                }
+              }
+            }
+          }
+          
           const message: ClientMessage = JSON.parse(raw)
           
-          // 内联 input 快速路径 — 跳过 handleMessage 的 switch 开销
           if (message.type === 'input') {
             const { sessionId, data: inputData } = message
             if (!sessionId || !inputData) return
-            
-            // 最快路径：使用缓存的 shell 引用
             if (ws.cachedShell && ws.sessionId === sessionId) {
               ws.cachedShell.write(inputData)
               return
             }
-            
             await this.handleInput(ws, message)
             return
           }
@@ -137,6 +164,8 @@ export class WebSocketHandler {
     // 如果 shell 已存在，直接发送输入并缓存引用
     if (session.shell) {
       ws.cachedShell = session.shell
+      // WebSocket 重连后，flush 之前缓冲的输出
+      this.flushBuffer(sessionId, ws)
       session.shell.write(data)
       return
     }
@@ -241,9 +270,9 @@ export class WebSocketHandler {
       
       if (!flushScheduled) {
         flushScheduled = true
-        // setImmediate 在当前 I/O 周期结束后立即执行
+        // process.nextTick 比 setImmediate 更快（微任务 vs 宏任务）
         // 合并同一事件循环 tick 内的所有数据块
-        setImmediate(flushOutput)
+        process.nextTick(flushOutput)
       }
     })
 

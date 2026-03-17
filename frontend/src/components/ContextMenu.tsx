@@ -397,7 +397,7 @@ export function getRequiredFileMenuItems(): string[] {
  * 获取文件夹菜单必需项 ID 列表
  */
 export function getRequiredFolderMenuItems(): string[] {
-  return ['open', 'newFile', 'newFolder', 'rename', 'delete', 'copyPath', 'upload']
+  return ['open', 'upload', 'download', 'newFile', 'newFolder', 'rename', 'delete', 'copyPath']
 }
 
 /**

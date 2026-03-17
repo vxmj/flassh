@@ -206,7 +206,7 @@ export function FileManagerComplete({ sessionId, serverKey, onFileOpen, onFileEd
     // 第一行显示修改时间（不可点击）
     {
       id: 'modifiedTime',
-      label: `修改: ${formatDateTime(new Date(contextMenu.file.modifiedTime))}`,
+      label: `修改: ${formatDateTime(new Date(contextMenu.file.mtime))}`,
       disabled: true,
       onClick: () => {},
     },

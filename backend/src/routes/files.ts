@@ -19,16 +19,8 @@ router.get('/:id/files', async (req: Request, res: Response, next: NextFunction)
 
     const files = await sftpManager.listDirectory(id, path)
     
-    // 转换字段名以匹配前端期望的格式
-    const formattedFiles = files.map(file => ({
-      name: file.name,
-      path: file.path,
-      type: file.type,
-      size: file.size,
-      modifiedTime: file.mtime, // 前端期望 modifiedTime
-    }))
-    
-    res.json({ path, files: formattedFiles })
+    // 直接发送，mtime 已经是时间戳
+    res.json({ path, files })
   } catch (err) {
     // 提供更详细的错误信息
     const error = err as Error

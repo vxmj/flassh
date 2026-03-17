@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import compression from 'compression'
 import cookieParser from 'cookie-parser'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -36,6 +37,9 @@ app.use('/api/access', cookieParser())
 
 // JSON 解析
 app.use(express.json())
+
+// gzip 压缩 API 响应
+app.use(compression())
 
 // 生产环境提供前端静态文件
 if (process.env.NODE_ENV === 'production') {

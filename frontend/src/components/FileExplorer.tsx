@@ -115,7 +115,7 @@ const TreeRow = memo(({ node, depth, expanded, selected, onToggle, onSelect, onD
   )
 }, (prev, next) => prev.node === next.node && prev.depth === next.depth && prev.expanded === next.expanded && prev.selected === next.selected)
 
-const Breadcrumb = ({ path, onNav }: { path: string; onNav: (p: string) => void }) => {
+const Breadcrumb = memo(({ path, onNav }: { path: string; onNav: (p: string) => void }) => {
   const parts = path.split('/').filter(Boolean)
   return (
     <div className="flex items-center gap-1 px-3 py-2 bg-surface/50 border-b border-border overflow-x-auto">
@@ -133,7 +133,7 @@ const Breadcrumb = ({ path, onNav }: { path: string; onNav: (p: string) => void 
       })}
     </div>
   )
-}
+})
 
 export interface FileExplorerHandle {
   expandDir: (file: FileItem) => void
@@ -299,7 +299,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     if (loading) return <div className="flex items-center justify-center h-32"><div className="flex items-center gap-2 text-secondary"><svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg><span>加载中...</span></div></div>
     if (error) return <div className="flex flex-col items-center justify-center h-32 gap-2"><svg className="w-8 h-8 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span className="text-error text-sm">{error}</span><button onClick={loadRoot} className="px-3 py-1 text-sm bg-surface hover:bg-surface/80 rounded transition-colors">重试</button></div>
     if (!rootNodes.length) return <div className="flex flex-col items-center justify-center h-32 text-secondary"><svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg><span className="text-sm">空目录</span></div>
-    return <div className="h-full overflow-y-auto py-1">{renderTree(rootNodes, 0)}</div>
+    return <div className="py-1">{renderTree(rootNodes, 0)}</div>
   }
 
   const btnCls = (disabled: boolean) => `p-1.5 rounded-lg backdrop-blur-sm transition-all border ${disabled ? 'text-secondary/30 cursor-not-allowed bg-surface/50 border-border' : 'text-secondary hover:text-white bg-surface hover:bg-primary/20 border-border'}`
@@ -322,18 +322,18 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
 
   return (
     <div className="flex flex-col h-full relative backdrop-blur-md bg-surface/60">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border shrink-0 flex-wrap">
         <button onClick={goUp} disabled={currentPath === '/'} className={btnCls(currentPath === '/')} title="返回上级目录">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16l-4-4m0 0l4-4m-4 4h18" /></svg>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16l-4-4m0 0l4-4m-4 4h18" /></svg>
         </button>
         <button onClick={loadRoot} disabled={loading} className={`${btnCls(loading)} ${loading ? 'animate-spin' : ''}`} title="刷新">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
         </button>
         <button onClick={() => setShowFavorites(!showFavorites)} className={`${btnCls(false)} ${showFavorites ? 'bg-primary/30 text-primary border-primary/50' : ''}`} title="收藏夹">
-          <svg className="w-5 h-5" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+          <svg className="w-4 h-4" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
         </button>
         <button onClick={() => { setExpandedPaths(new Set()); setChildrenCache(new Map()) }} disabled={expandedPaths.size === 0} className={btnCls(expandedPaths.size === 0)} title="收起全部">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" /></svg>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" /></svg>
         </button>
         <div className="flex-1" /><span className="text-xs text-secondary">{rootNodes.length} 项</span>
       </div>
@@ -372,7 +372,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
       )}
 
       <Breadcrumb path={breadcrumbPath} onNav={onPathChange} />
-      <div className="flex-1 overflow-hidden">{renderContent()}</div>
+      <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>{renderContent()}</div>
     </div>
   )
 })
