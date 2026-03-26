@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { useThemeStore } from '../store'
 import type { TerminalTheme } from '../types'
 import '@xterm/xterm/css/xterm.css'
@@ -329,6 +330,16 @@ export function TerminalPanel({ sessionId, isActive = true, onResize, onWsReady,
     } catch { /* ignore */ }
     
     terminal.open(container)
+    
+    // 加载 WebGL 渲染器（字符对齐更精确，修复二维码/ASCII art 歪斜）
+    // 必须在 terminal.open() 之后加载
+    try {
+      const webglAddon = new WebglAddon()
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose()
+      })
+      terminal.loadAddon(webglAddon)
+    } catch { /* WebGL 不可用时自动回退到 canvas */ }
     
     // 等待字体加载完成后再 fit，确保列数计算准确
     const doFit = () => {
